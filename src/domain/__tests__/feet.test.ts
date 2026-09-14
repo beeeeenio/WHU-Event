@@ -58,6 +58,24 @@ describe('labeledFootPositions — Dreieckpodest', () => {
     expect(labeled).toHaveLength(3);
     expect(labeled.every((f) => f.ownerPodest === 1)).toBe(true);
   });
+
+  // Bug-Report (2026-09-14): in einer größeren Bühne zeigten Dreiecke optisch überhaupt keine
+  // Füße. Ursache: der Fuß-"Eigentümer" (welche Platte den Fuß in ihrem Grundriss zeichnet) wurde
+  // per kleinster Podest-Nummer gewählt — ein NACH seinen rechteckigen Nachbarn platziertes
+  // Dreieck (höhere Nummer) verlor dadurch systematisch ALLE 3 Ecken an die Nachbarn. Jetzt wird
+  // bevorzugt das Stück mit den wenigsten Ecken (Dreieck=3 vor Rechteck=4) als Eigentümer gewählt.
+  it('ein NACH seinen rechteckigen Nachbarn platziertes Dreieck bleibt trotzdem Eigentümer aller 3 eigenen Füße', () => {
+    const rectA = rect(-1, -1, 1, 1); // teilt (0,0) mit der Dreieck-Ecke
+    const rectB = rect(1, 0, 1, 1); // teilt (1,0)
+    const rectC = rect(0, 1, 1, 1); // teilt (0,1)
+    const tri = triangle(0, 0, 'tl'); // echte Ecken: (0,0), (1,0), (0,1)
+    const panels = [rectA, rectB, rectC, tri]; // Dreieck absichtlich zuletzt (höchste Podest-Nr. 4)
+
+    const labeled = labeledFootPositions(panels);
+    const triangleOwnedCount = labeled.filter((f) => f.podeste.includes(4) && f.ownerPodest === 4).length;
+    expect(triangleOwnedCount).toBeGreaterThanOrEqual(2);
+    expect(triangleOwnedCount).toBe(3);
+  });
 });
 
 function byXY(a: { x: number; y: number }, b: { x: number; y: number }): number {

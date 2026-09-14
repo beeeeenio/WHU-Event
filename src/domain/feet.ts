@@ -117,7 +117,21 @@ export function labeledFootPositions(panels: PanelInstance[]): LabeledFootPositi
 
   return points.map((p) => {
     const podeste = podesteByPoint.get(keyFor(p.x, p.y)) ?? [];
-    const ownerPodest = Math.min(...podeste);
+    // Bevorzugt als visuellen "Besitzer" dieses Fußes das Stück mit den WENIGSTEN Ecken (aktuell
+    // nur Dreieck [3] vs. Rechteck [4] relevant), nicht einfach die kleinste Podest-Nummer.
+    // Bug-Report: ein nach seinen rechteckigen Nachbarn platziertes Dreieck verlor bei reiner
+    // Nummern-Auswahl systematisch ALLE 3 Ecken an die Nachbarn — der Fuß erschien optisch nie
+    // im Dreieck selbst, obwohl er strukturell dazugehört (in Material-/Gesamtzahl war er immer
+    // korrekt gezählt, siehe countFeet/footPositions oben, nur die RENDER-Zuordnung war falsch).
+    // Ein Dreieck hat nur 3 mögliche Fuß-Ecken und profitiert von der Bevorzugung entsprechend
+    // mehr als ein Rechteck, das i.d.R. weitere, nicht geteilte Ecken für eigene Füße hat.
+    const cornerCount = (podestNr: number) => (panels[podestNr - 1].corner !== undefined ? 3 : 4);
+    const ownerPodest = podeste.reduce((best, n) => {
+      const diff = cornerCount(n) - cornerCount(best);
+      if (diff < 0) return n;
+      if (diff > 0) return best;
+      return n < best ? n : best;
+    });
     const owner = panels[ownerPodest - 1];
     const centerX = owner.x + owner.w / 2;
     const centerY = owner.y + owner.d / 2;
