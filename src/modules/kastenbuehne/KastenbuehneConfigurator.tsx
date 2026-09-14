@@ -6,6 +6,7 @@ import { FootColorLegend } from '../../components/shared/FootColorLegend';
 import { HeightSelector } from '../../components/shared/HeightSelector';
 import { MaterialListTable } from '../../components/shared/MaterialListTable';
 import { PieceCanvasEditor } from '../../components/shared/PieceCanvasEditor';
+import { PlacedPiecesChips } from '../../components/shared/PlacedPiecesChips';
 import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { StairsRampCalculator } from '../../components/shared/StairsRampCalculator';
 import { SummaryStats } from '../../components/shared/SummaryStats';
@@ -120,28 +121,7 @@ export function KastenbuehneConfigurator() {
           onRotatePiece={rotatePiece}
           frontEdgeLabel="Vorderkante"
         />
-        {hasContent && (
-          <ul className="space-y-1.5">
-            {pieces.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm"
-              >
-                <span className="text-[var(--color-text)]">
-                  {p.w.toFixed(1).replace('.', ',')}×{p.d.toFixed(1).replace('.', ',')} m bei x=
-                  {p.x.toFixed(1).replace('.', ',')}, y={p.y.toFixed(1).replace('.', ',')} m
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removePiece(p.id)}
-                  className="px-2 py-0.5 rounded text-xs border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-                >
-                  Entfernen
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <PlacedPiecesChips pieces={pieces} onRemovePiece={removePiece} />
       </section>
 
       <section className="space-y-3">
