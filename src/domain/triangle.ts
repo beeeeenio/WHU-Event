@@ -49,3 +49,17 @@ export function nextTriangleCorner(corner: TriangleCorner): TriangleCorner {
   const i = ROTATION_ORDER.indexOf(corner);
   return ROTATION_ORDER[(i + 1) % ROTATION_ORDER.length];
 }
+
+/** Spiegelt an der waagerechten Achse (oben/unten tauschen, links/rechts bleibt) — z.B. wenn
+ *  die Bounding-Box einer Ecke vertikal gespiegelt wird (nach oben statt nach unten gezogen). */
+export function mirrorTriangleCornerVertical(corner: TriangleCorner): TriangleCorner {
+  const map: Record<TriangleCorner, TriangleCorner> = { tl: 'bl', bl: 'tl', tr: 'br', br: 'tr' };
+  return map[corner];
+}
+
+/** Spiegelt an der Hauptdiagonale (tl/br bleiben, tr/bl tauschen) — entspricht einer x/y-
+ *  Transposition der Bounding-Box (z.B. wenn Breite und Tiefe vertauscht werden). */
+export function mirrorTriangleCornerDiagonal(corner: TriangleCorner): TriangleCorner {
+  const map: Record<TriangleCorner, TriangleCorner> = { tl: 'tl', br: 'br', tr: 'bl', bl: 'tr' };
+  return map[corner];
+}

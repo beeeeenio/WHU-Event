@@ -1,5 +1,12 @@
 import { computeLayout } from './layout';
-import { catalogSizeKey, isSondermassPiece, primaryPanel, sondermassSubstituteWidths, TRIANGLE_SIZE_KEY } from './panels';
+import {
+  catalogSizeKey,
+  isSondermassPiece,
+  primaryPanel,
+  sondermassSubstituteWidths,
+  TRIANGLE_PANEL_SIZE_M,
+  TRIANGLE_SIZE_KEY,
+} from './panels';
 import { nextTriangleCorner } from './triangle';
 import type { LayoutResult, PanelInstance, TriangleCorner } from './types';
 
@@ -245,7 +252,14 @@ export function fillVerticalSpan(spanDepthM: number, pieceWidthM: number, fixedX
 
 interface TaperRow {
   depthM: number;
-  pieces: { x: number; w: number }[];
+  pieces: { x: number; w: number; corner?: TriangleCorner }[];
+}
+
+/** Ob eine Zeile schon so schmal zusammengelaufen ist, dass sie statt eines Rechteck-Streifens
+ *  eine echte Dreieckspitze bekommt (siehe linearTaperRows) — nur bei 1×1 m, der Bounding-Box
+ *  des echten Dreieckpodests. */
+function isTaperTipEligible(w: number, pieceDepthM: number): boolean {
+  return Math.abs(w - TRIANGLE_PANEL_SIZE_M) < EPS && Math.abs(pieceDepthM - TRIANGLE_PANEL_SIZE_M) < EPS;
 }
 
 /**
@@ -262,7 +276,14 @@ function linearTaperRows(baseWidthM: number, rowCount: number, pieceDepthM: numb
     const raw = (baseWidthM * (rowCount - i)) / (rowCount + 1);
     const w = Math.max(widthGrid, Math.round(raw / widthGrid) * widthGrid);
     const rowOffsetX = snapToGrid((baseWidthM - w) / 2);
-    const pieces = fillSpanWithCatalog(w, pieceDepthM, rowOffsetX);
+    // Die letzte (schmalste) Zeile bekommt, sobald sie auf 1×1 m zusammengelaufen ist, eine
+    // echte Dreieckspitze statt eines weiteren flachen Rechteck-Streifens. 'tl' lässt die obere
+    // Kante (Anschluss an die Zeile darüber) UND die linke Kante voll stehen — nur die Phantom-
+    // Ecke unten rechts, in Zulaufrichtung, bleibt frei.
+    const pieces: TaperRow['pieces'] =
+      i === rowCount - 1 && isTaperTipEligible(w, pieceDepthM)
+        ? [{ x: rowOffsetX, w, corner: 'tl' }]
+        : fillSpanWithCatalog(w, pieceDepthM, rowOffsetX);
     rows.push({ depthM: pieceDepthM, pieces });
   }
   return rows;
@@ -285,7 +306,7 @@ export function wedgePiecesAt(template: WedgeTemplate, anchorX: number, anchorY:
   const pieces: FilledPiece[] = [];
   let y = anchorY;
   for (const row of rows) {
-    for (const p of row.pieces) pieces.push({ x: round3(p.x + anchorX), y, w: p.w, d: row.depthM });
+    for (const p of row.pieces) pieces.push({ x: round3(p.x + anchorX), y, w: p.w, d: row.depthM, corner: p.corner });
     y = round3(y + row.depthM);
   }
   return pieces;

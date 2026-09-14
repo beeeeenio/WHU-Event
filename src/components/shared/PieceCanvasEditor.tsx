@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import {
   catalogPieceOptions,
-  defaultWedgeTemplate,
   fillHorizontalSpan,
   fillVerticalSpan,
   findFreePosition,
@@ -13,7 +12,7 @@ import {
   type Piece2D,
 } from '../../domain/customShape';
 import { isSondermassPiece, TRIANGLE_PANEL_SIZE_M } from '../../domain/panels';
-import { nextTriangleCorner, trianglePoints } from '../../domain/triangle';
+import { mirrorTriangleCornerDiagonal, mirrorTriangleCornerVertical, nextTriangleCorner, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
 
 type ToolPayload =
@@ -43,6 +42,11 @@ const MIN_CANVAS_DEPTH_M = 4;
 const BUFFER_M = 2;
 const DRAG_THRESHOLD_PX = 4;
 const GRID_STEP_M = 0.5;
+// Ab welchem Verhältnis (kürzere Zug-Achse ÷ längere) ein Zeichnen-Zug als "schräg" statt
+// "gerade" gilt — siehe drawFillFor. 0,35 heißt: die kürzere Achse muss gut ein Drittel der
+// längeren erreichen, bevor ein Keil statt einer geraden Fläche entsteht (rein zufällige
+// Diagonal-Abweichung beim geraden Ziehen soll nicht versehentlich einen Keil auslösen).
+const DIAGONAL_RATIO_THRESHOLD = 0.35;
 
 function formatM(v: number): string {
   return v.toFixed(1).replace('.', ',');
@@ -50,6 +54,10 @@ function formatM(v: number): string {
 
 function round1(v: number): number {
   return Math.round(v * 10) / 10;
+}
+
+function round3(v: number): number {
+  return Math.round(v * 1000) / 1000;
 }
 
 const CATALOG_OPTIONS = catalogPieceOptions();
@@ -169,6 +177,11 @@ export function PieceCanvasEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const [armed, setArmedState] = useState<ToolPayload | null>(null);
   const [pieceThicknessM, setPieceThicknessM] = useState<1 | 2>(1);
+  // Einstellbare Keil-Größe statt fest 3 m Basisbreite / 3 Reihen — Benni fand den festen Keil
+  // "nicht gut". Grenzen sind großzügig, aber nicht grenzenlos (0,5-m-Raster, min. 2 Reihen für
+  // eine sichtbare Verjüngung).
+  const [wedgeBaseWidthM, setWedgeBaseWidthM] = useState(3);
+  const [wedgeRowCount, setWedgeRowCount] = useState(3);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const [tracing, setTracing] = useState<TracingState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -225,6 +238,74 @@ export function PieceCanvasEditor({
     return { x: transformed.x, y: transformed.y };
   }
 
+  /** Entscheidet, ob ein Zeichnen-Zug als gerade Fläche oder als Keil (Verjüngung) gilt — von
+   *  `drawFillFor` UND der Live-Vorschau-Beschriftung genutzt, damit beide exakt übereinstimmen. */
+  function classifyDrag(
+    start: { x: number; y: number },
+    current: { x: number; y: number },
+    thickness: number,
+  ): { mode: 'straight' } | { mode: 'taper'; baseWidthM: number; rowCount: number } {
+    const adx = Math.abs(current.x - start.x);
+    const ady = Math.abs(current.y - start.y);
+    const maxAxis = Math.max(adx, ady);
+    const minAxis = Math.min(adx, ady);
+    if (maxAxis >= SMALLEST_WIDTH && minAxis / Math.max(maxAxis, 1e-6) >= DIAGONAL_RATIO_THRESHOLD) {
+      return {
+        mode: 'taper',
+        baseWidthM: Math.max(SMALLEST_WIDTH, round1(minAxis)),
+        rowCount: Math.max(2, Math.round(maxAxis / thickness)),
+      };
+    }
+    return { mode: 'straight' };
+  }
+
+  /** Baut einen Keil in EXAKT der Richtung, in die tatsächlich gezogen wurde (oben/unten/links/
+   *  rechts) — Basisbreite am Start-Punkt, Spitze Richtung `current`. Nutzt dieselbe
+   *  `wedgePiecesAt`-Geometrie wie der Keil-Button (lokal, "nach unten wachsend" erzeugt) und
+   *  transformiert das Ergebnis passend, statt die Verjüngungs-Mathematik zweimal zu bauen. */
+  function taperPiecesForDrag(
+    start: { x: number; y: number },
+    current: { x: number; y: number },
+    baseWidthM: number,
+    rowCount: number,
+    pieceDepthM: number,
+  ): FilledPiece[] {
+    const totalDepthM = rowCount * pieceDepthM;
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+    const vertical = Math.abs(dy) >= Math.abs(dx);
+    const native = wedgePiecesAt({ baseWidthM, rowCount, pieceDepthM }, 0, 0);
+
+    // Jeder der 4 Zweige transformiert nicht nur x/y/w/d, sondern muss eine ggf. vorhandene
+    // Dreieck-Spitzen-Ecke (aus linearTaperRows, siehe corner an der letzten Zeile) exakt
+    // passend mitdrehen/-spiegeln — sonst würde die Phantom-Ecke nach einer Diagonal-Zeichnung
+    // in die falsche Richtung zeigen. Welche Transformation wohin gehört, ergibt sich direkt aus
+    // der jeweiligen x/y/w/d-Transformation der Zeile selbst (Herleitung: Wohin bildet dieser
+    // Zweig die 4 Bounding-Box-Ecken der Zeile ab?):
+    // - dy>=0: reine Verschiebung → Ecke unverändert.
+    // - dy<0: y wird gespiegelt, x bleibt → vertikale Spiegelung (oben/unten tauschen).
+    // - dx>=0: x/y vertauscht (Transposition) → Spiegelung an der Hauptdiagonale.
+    // - dx<0: x/y vertauscht UND gespiegelt → das ist exakt der 4er-Rotationszyklus (nextTriangleCorner).
+    return native.map((p) => {
+      if (vertical) {
+        const baseX = start.x - baseWidthM / 2 + p.x;
+        if (dy >= 0) return { x: round3(baseX), y: round3(start.y + p.y), w: p.w, d: p.d, corner: p.corner };
+        const flippedY = totalDepthM - p.y - p.d;
+        const corner = p.corner === undefined ? undefined : mirrorTriangleCornerVertical(p.corner);
+        return { x: round3(baseX), y: round3(start.y - totalDepthM + flippedY), w: p.w, d: p.d, corner };
+      }
+      // Waagerechter Zug: Zeilen werden zu Spalten (x/y und w/d vertauscht).
+      const baseY = start.y - baseWidthM / 2 + p.x;
+      if (dx >= 0) {
+        const corner = p.corner === undefined ? undefined : mirrorTriangleCornerDiagonal(p.corner);
+        return { x: round3(start.x + p.y), y: round3(baseY), w: p.d, d: p.w, corner };
+      }
+      const flippedY = totalDepthM - p.y - p.d;
+      const corner = p.corner === undefined ? undefined : nextTriangleCorner(p.corner);
+      return { x: round3(start.x - totalDepthM + flippedY), y: round3(baseY), w: p.d, d: p.w, corner };
+    });
+  }
+
   function drawFillFor(start: { x: number; y: number }, current: { x: number; y: number }, thickness: number): FilledPiece[] {
     const dx = current.x - start.x;
     const dy = current.y - start.y;
@@ -236,6 +317,10 @@ export function PieceCanvasEditor({
       // bleiben — kleinstes verfügbares Stück, mittig auf den Startpunkt.
       const pos = findFreePosition(pieces, SMALLEST_WIDTH, thickness, start.x - SMALLEST_WIDTH / 2, start.y - thickness / 2);
       return [{ x: pos.x, y: pos.y, w: SMALLEST_WIDTH, d: thickness }];
+    }
+    const drag = classifyDrag(start, current, thickness);
+    if (drag.mode === 'taper') {
+      return taperPiecesForDrag(start, current, drag.baseWidthM, drag.rowCount, thickness);
     }
     if (horizontal) {
       const minX = Math.max(0, Math.min(start.x, current.x));
@@ -260,7 +345,7 @@ export function PieceCanvasEditor({
       const pos = findFreePosition(pieces, s, s, pointerPos.x - s / 2, pointerPos.y - s / 2);
       return [{ x: pos.x, y: pos.y, w: s, d: s, corner: payload.corner }];
     }
-    const template = defaultWedgeTemplate(pieceThicknessM);
+    const template = { baseWidthM: wedgeBaseWidthM, rowCount: wedgeRowCount, pieceDepthM: pieceThicknessM };
     const anchorX = pointerPos.x - template.baseWidthM / 2;
     const anchorY = Math.max(0, pointerPos.y);
     const filled = wedgePiecesAt(template, anchorX, anchorY);
@@ -286,7 +371,7 @@ export function PieceCanvasEditor({
       const target = findFreePosition(pieces, s, s, pos.x - s / 2, pos.y - s / 2);
       onAddPieces([{ x: target.x, y: target.y, w: s, d: s, corner: payload.corner }]);
     } else {
-      const template = defaultWedgeTemplate(pieceThicknessM);
+      const template = { baseWidthM: wedgeBaseWidthM, rowCount: wedgeRowCount, pieceDepthM: pieceThicknessM };
       const filled = wedgePiecesAt(template, pos.x - template.baseWidthM / 2, Math.max(0, pos.y));
       if (fitsAllAt(pieces, filled)) {
         onAddPieces(filled);
@@ -768,9 +853,30 @@ export function PieceCanvasEditor({
                 opacity={0.6}
                 style={{ pointerEvents: 'none' }}
               >
-                Klicken + ziehen (waagerecht oder senkrecht), um eine Fläche zu füllen
+                Klicken + ziehen (waagerecht, senkrecht oder schräg für einen Keil), um eine Fläche zu füllen
               </text>
             )}
+            {tracing &&
+              (() => {
+                const drag = classifyDrag(tracing.start, tracing.current, pieceThicknessM);
+                const label =
+                  drag.mode === 'taper'
+                    ? `Keil, oben ${formatM(drag.baseWidthM)} m, ${drag.rowCount} Reihen`
+                    : `Gerade, ${formatM(Math.max(Math.abs(tracing.current.x - tracing.start.x), Math.abs(tracing.current.y - tracing.start.y)))} m`;
+                return (
+                  <text
+                    x={tracing.current.x}
+                    y={tracing.current.y - 0.25}
+                    fontSize={0.18}
+                    textAnchor="middle"
+                    fill="var(--color-accent)"
+                    fontFamily="var(--font-mono)"
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {label}
+                  </text>
+                );
+              })()}
           </>
         )}
       </svg>
@@ -918,6 +1024,46 @@ export function PieceCanvasEditor({
           })()}
         </div>
 
+        {armed?.kind === 'wedge' && (
+          <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[var(--color-border)]">
+            <span className="text-xs text-[var(--color-text-muted)]">Breite:</span>
+            <button
+              type="button"
+              onClick={() => setWedgeBaseWidthM((w) => Math.max(1, round1(w - 0.5)))}
+              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
+            >
+              −
+            </button>
+            <span className="text-xs w-12 text-center" style={{ fontFamily: 'var(--font-mono)' }}>
+              {formatM(wedgeBaseWidthM)} m
+            </span>
+            <button
+              type="button"
+              onClick={() => setWedgeBaseWidthM((w) => Math.min(10, round1(w + 0.5)))}
+              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
+            >
+              +
+            </button>
+            <span className="text-xs text-[var(--color-text-muted)] ml-2">Reihen:</span>
+            <button
+              type="button"
+              onClick={() => setWedgeRowCount((r) => Math.max(2, r - 1))}
+              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
+            >
+              −
+            </button>
+            <span className="text-xs w-4 text-center" style={{ fontFamily: 'var(--font-mono)' }}>
+              {wedgeRowCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setWedgeRowCount((r) => Math.min(8, r + 1))}
+              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
+            >
+              +
+            </button>
+          </div>
+        )}
         {(armed?.kind === 'wedge' || armed?.kind === 'draw') && (
           <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[var(--color-border)]">
             <span className="text-xs text-[var(--color-text-muted)]">Tiefe:</span>

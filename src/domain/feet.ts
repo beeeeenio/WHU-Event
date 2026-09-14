@@ -115,23 +115,67 @@ export function labeledFootPositions(panels: PanelInstance[]): LabeledFootPositi
     }
   });
 
-  return points.map((p) => {
-    const podeste = podesteByPoint.get(keyFor(p.x, p.y)) ?? [];
-    // Bevorzugt als visuellen "Besitzer" dieses Fußes das Stück mit den WENIGSTEN Ecken (aktuell
-    // nur Dreieck [3] vs. Rechteck [4] relevant), nicht einfach die kleinste Podest-Nummer.
-    // Bug-Report: ein nach seinen rechteckigen Nachbarn platziertes Dreieck verlor bei reiner
-    // Nummern-Auswahl systematisch ALLE 3 Ecken an die Nachbarn — der Fuß erschien optisch nie
-    // im Dreieck selbst, obwohl er strukturell dazugehört (in Material-/Gesamtzahl war er immer
-    // korrekt gezählt, siehe countFeet/footPositions oben, nur die RENDER-Zuordnung war falsch).
-    // Ein Dreieck hat nur 3 mögliche Fuß-Ecken und profitiert von der Bevorzugung entsprechend
-    // mehr als ein Rechteck, das i.d.R. weitere, nicht geteilte Ecken für eigene Füße hat.
-    const cornerCount = (podestNr: number) => (panels[podestNr - 1].corner !== undefined ? 3 : 4);
-    const ownerPodest = podeste.reduce((best, n) => {
+  // Zwei Durchgänge statt einer einfachen Pro-Punkt-Regel, sonst verhungert IMMER irgendwer:
+  //
+  // Durchgang 1 (Form-Präferenz): an jeder geteilten Ecke gewinnt das Stück mit weniger Ecken
+  // (Dreieck=3 vor Rechteck=4), sonst die kleinste Podest-Nummer. Löst den Ursprungsfall (ein
+  // Dreieck zeigte optisch gar keinen Fuß), kann aber selbst wieder ein Rechteck leer ausgehen
+  // lassen, wenn es an ALLEN Ecken von Dreiecken umgeben ist (z.B. die Mitte-Platte eines Achtecks
+  // aus 1 Mitte + 4 Rand + 4 Eck-Dreiecken — dort gewinnt an jeder ihrer 4 Ecken ein anderes
+  // Dreieck, die Mitte bekommt nach Durchgang 1 keinen einzigen).
+  //
+  // Durchgang 2 (Fairness-Korrektur): jedes Stück, das nach Durchgang 1 KEINEN eigenen Fuß hat,
+  // holt sich EINE seiner eigenen Ecken vom aktuellen Eigentümer zurück — aber nur, wenn der sich
+  // das leisten kann (noch mehr als 1 Punkt besitzt), damit dabei nicht einfach ein anderes Stück
+  // neu verhungert.
+  //
+  // Recherche (2026-09-14) in den offiziellen NivTec-Aufbauanleitungen/Katalogen bestätigt: das
+  // "4-2-2-1"-Prinzip für reine Rechteck-Raster ist offiziell (genau die oben implementierte
+  // Logik über eindeutige Eckpunkte), ein Dreieckpodest hat laut Katalog tatsächlich nur 3
+  // Fußaufnahmen (bestätigt phantomCorner) — aber für gemischte Dreieck/Rechteck-Ecken wie hier
+  // gibt es KEINE veröffentlichte Regel; NivTec verweist Sonderformen explizit an die eigene
+  // Konstruktionsabteilung. Dieser Zwei-Durchgang-Algorithmus ist also eine begründete eigene
+  // Näherung, kein Verstoß gegen eine bekannte Regel.
+  const cornerCount = (podestNr: number) => (panels[podestNr - 1].corner !== undefined ? 3 : 4);
+  function shapeOwner(podeste: number[]): number {
+    return podeste.reduce((best, n) => {
       const diff = cornerCount(n) - cornerCount(best);
       if (diff < 0) return n;
       if (diff > 0) return best;
       return n < best ? n : best;
     });
+  }
+
+  const ownerByKey = new Map<string, number>();
+  const keysByOwner = new Map<number, string[]>();
+  for (const p of points) {
+    const key = keyFor(p.x, p.y);
+    const owner = shapeOwner(podesteByPoint.get(key) ?? []);
+    ownerByKey.set(key, owner);
+    if (!keysByOwner.has(owner)) keysByOwner.set(owner, []);
+    keysByOwner.get(owner)!.push(key);
+  }
+
+  for (let podestNr = 1; podestNr <= panels.length; podestNr++) {
+    if ((keysByOwner.get(podestNr)?.length ?? 0) > 0) continue; // hat schon mindestens einen Fuß
+    const piece = panels[podestNr - 1];
+    if (piece.w <= 0 || piece.d <= 0) continue;
+    for (const c of corners(piece)) {
+      const key = keyFor(c.x, c.y);
+      const currentOwner = ownerByKey.get(key)!;
+      const currentOwnerKeys = keysByOwner.get(currentOwner)!;
+      if (currentOwnerKeys.length <= 1) continue; // Eigentümer hätte danach selbst nichts mehr
+      currentOwnerKeys.splice(currentOwnerKeys.indexOf(key), 1);
+      ownerByKey.set(key, podestNr);
+      if (!keysByOwner.has(podestNr)) keysByOwner.set(podestNr, []);
+      keysByOwner.get(podestNr)!.push(key);
+      break;
+    }
+  }
+
+  return points.map((p) => {
+    const podeste = podesteByPoint.get(keyFor(p.x, p.y)) ?? [];
+    const ownerPodest = ownerByKey.get(keyFor(p.x, p.y))!;
     const owner = panels[ownerPodest - 1];
     const centerX = owner.x + owner.w / 2;
     const centerY = owner.y + owner.d / 2;

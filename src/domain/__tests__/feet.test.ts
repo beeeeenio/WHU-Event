@@ -76,6 +76,30 @@ describe('labeledFootPositions — Dreieckpodest', () => {
     expect(triangleOwnedCount).toBeGreaterThanOrEqual(2);
     expect(triangleOwnedCount).toBe(3);
   });
+
+  // Bug-Report (2026-09-14, Folge-Screenshot): die reine "wenigste Ecken gewinnt"-Regel oben löste
+  // den Dreieck-Fall, kippte das Problem aber aufs Rechteck um: ein Achteck aus 1 Mitte- + 4 Rand-
+  // Rechtecken + 4 Eck-Dreiecken ließ die Mitte-Platte (und tendenziell die Rand-Platten) JEDE
+  // eigene Ecke an die Dreiecke verlieren — dieselbe "sieht komplett fußlos aus"-Situation, nur
+  // für Rechtecke statt Dreiecke. Jetzt geht "hat noch gar keinen eigenen Fuß" vor Ecken-Anzahl.
+  it('ein von 4 Dreiecken umrahmtes Mitte-Rechteck (Achteck) behält trotzdem mindestens einen eigenen Fuß', () => {
+    const center = rect(1, 1, 1, 1);
+    const top = rect(1, 0, 1, 1);
+    const bottom = rect(1, 2, 1, 1);
+    const left = rect(0, 1, 1, 1);
+    const right = rect(2, 1, 1, 1);
+    const tl = triangle(0, 0, 'br');
+    const tr = triangle(2, 0, 'bl');
+    const bl = triangle(0, 2, 'tr');
+    const br = triangle(2, 2, 'tl');
+    const panels = [center, top, bottom, left, right, tl, tr, bl, br];
+
+    const labeled = labeledFootPositions(panels);
+    for (let podestNr = 1; podestNr <= panels.length; podestNr++) {
+      const ownedCount = labeled.filter((f) => f.ownerPodest === podestNr).length;
+      expect(ownedCount).toBeGreaterThanOrEqual(1);
+    }
+  });
 });
 
 function byXY(a: { x: number; y: number }, b: { x: number; y: number }): number {

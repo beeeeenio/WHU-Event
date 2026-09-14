@@ -59,13 +59,14 @@ export function buildMaterialList({
     if (key === TRIANGLE_SIZE_KEY) {
       // Eigener Zweig statt parseSizeKey/articleNumberFor(1,1) — das würde fälschlich die
       // Artikelnummer des echten 1×1-Rechtecks liefern (siehe (1,1)-Mehrdeutigkeit in
-      // customShape.ts). Keine Artikelnummer bekannt → bleibt undefined, rendert wie jeder
-      // andere unbekannte Artikel als "–" (MaterialListTable.tsx, bestehendes Verhalten).
+      // customShape.ts). Artikelnummer per Recherche im offiziellen NivTec-Katalog (PDF,
+      // nivtec.com) bestätigt: "Dreieck: 100×90°×100 cm" = Art. 112 05 0 (die 45°-Variante hat
+      // eine andere Nummer, 112 01 1 — nicht dasselbe Stück wie unser rechtwinkliges Dreieck).
       items.push({
         pos: pos++,
         gruppe: 'PLATTEN',
         artikel: 'Systempodest, Dreieck 1×1 m (rechtwinklig)',
-        artikelNr: undefined,
+        artikelNr: '112 05 0',
         menge: layout.panelCountsBySize[key],
         einheit: 'Stk.',
       });
