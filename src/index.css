@@ -1,0 +1,71 @@
+@import 'tailwindcss';
+
+/*
+ * forumWHU Corporate Identity (Brand Style Guide v2, Kapitel 3 "Farben").
+ * Primärfarben: Navy Blue #061638, Bright Orange #f08100, Beige #f4eee0.
+ * Sekundärfarben: Dark Grey #404040, Slate Blue #2C3E6B, Warm Gold #9A6B00, Forest Green #1A3D2B.
+ * Regel aus dem Guide: Orange ist reine Signalfarbe (Buttons/Akzente) und wird NIE
+ * zur Flächenfarbe für große Hintergründe — deshalb nutzt die Fußhöhen-Farbskala
+ * stattdessen die Slate-Blue/Navy-Familie, nicht Orange.
+ */
+:root {
+  --color-bg: #f4eee0;
+  --color-surface: #fbf8f3;
+  --color-border: #e3dcc9;
+  --color-text: #061638;
+  --color-text-muted: #5c5648;
+  --color-accent: #f08100;
+  --color-accent-contrast: #061638;
+  --color-danger: #dc2626;
+  --color-warning: #9a6b00;
+  --color-grid-line: #d8cfbc;
+  --color-grid-line-major: #c7bc9e;
+  --color-panel-fill: #f8f5ee;
+  --color-panel-hatch: #101b34;
+  --color-panel-hatch-warning: #9a6b00;
+  --color-panel-stroke: #2c3e6b;
+  --color-railing: #f08100;
+  --font-display: 'Archivo', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #061638;
+    --color-surface: #0e2049;
+    --color-border: #23355e;
+    --color-text: #f4eee0;
+    --color-text-muted: #94a6dd;
+    --color-accent: #f08100;
+    --color-accent-contrast: #061638;
+    --color-danger: #f87171;
+    --color-warning: #e8b830;
+    --color-grid-line: #16234a;
+    --color-grid-line-major: #263e72;
+    --color-panel-fill: #16224a;
+    --color-panel-hatch: #f4eee0;
+    --color-panel-hatch-warning: #e8b830;
+    --color-panel-stroke: #7d90c9;
+    --color-railing: #f08100;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
