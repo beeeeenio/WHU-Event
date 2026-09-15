@@ -31,7 +31,8 @@ function isValidPiece2D(p: unknown): p is Piece2D {
     typeof v?.y === 'number' &&
     typeof v?.w === 'number' &&
     typeof v?.d === 'number' &&
-    (v?.corner === undefined || VALID_CORNERS.includes(v.corner))
+    (v?.corner === undefined || VALID_CORNERS.includes(v.corner)) &&
+    (v?.footHeightCm === undefined || typeof v.footHeightCm === 'number')
   );
 }
 
@@ -66,6 +67,10 @@ export function KastenbuehneConfigurator() {
 
   function rotatePiece(id: string) {
     setPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
+  }
+
+  function setFootHeight(id: string, footHeightCm: number | undefined) {
+    setPieces((prev) => prev.map((p) => (p.id === id ? { ...p, footHeightCm } : p)));
   }
 
   function applySavedState(data: KastenbuehneSavedState) {
@@ -111,6 +116,9 @@ export function KastenbuehneConfigurator() {
           onRemovePiece={removePiece}
           onMovePiece={movePiece}
           onRotatePiece={rotatePiece}
+          onSetFootHeightOverride={setFootHeight}
+          defaultHeightCm={heightCm}
+          heightOptionsCm={STRUCTURE_RULES.buehne.heightOptionsCm}
           frontEdgeLabel="Vorderkante"
         />
         <PlacedPiecesChips pieces={pieces} onRemovePiece={removePiece} />
@@ -179,8 +187,10 @@ export function KastenbuehneConfigurator() {
             />
           )}
 
-          {(resultTab === 'grundriss' || resultTab === '3d') && <FootColorLegend heights={[heightCm]} />}
-          {resultTab === 'grundriss' && <FloorPlanSVG layout={layout} feet={labeledFeet} heightCm={heightCm} />}
+          {(resultTab === 'grundriss' || resultTab === '3d') && (
+            <FootColorLegend heights={labeledFeet.map((f) => f.heightCm)} />
+          )}
+          {resultTab === 'grundriss' && <FloorPlanSVG layout={layout} feet={labeledFeet} />}
           {/* AufbauScene3D bleibt unabhängig vom aktiven Tab immer gemountet — der PNG-Export
               braucht die live WebGL-Canvas-Referenz, die beim Unmounten verloren ginge. */}
           <div className={resultTab === '3d' ? '' : 'hidden'}>

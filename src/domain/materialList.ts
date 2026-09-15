@@ -1,5 +1,5 @@
 import { countHorizontalBraces } from './bracing';
-import { countFeet } from './feet';
+import { labeledFootPositions } from './feet';
 import { articleNumberFor, TRIANGLE_SIZE_KEY } from './panels';
 import { isBracingRequired, isHorizontalBracingRequired } from './rules';
 import type { LayoutResult, MaterialListItem, RailingSide, StructureTypeId } from './types';
@@ -37,8 +37,10 @@ export interface MaterialListInput {
   layout: LayoutResult;
   heightCm: number;
   activeRailingSides: RailingSide[];
-  /** Überschreibt die Fuß-Artikelbezeichnung (z.B. für Spindelfüße statt LV-Füßen). */
-  footLabel?: string;
+  /** Formatiert die Fuß-Artikelbezeichnung für eine gegebene Höhe (z.B. für Spindelfüße statt
+   *  LV-Füßen) — wird einmal pro tatsächlich vorkommender Höhe aufgerufen, da einzelne Platten
+   *  eine abweichende Fuß-Höhe haben können (siehe PanelInstance.footHeightCm). */
+  footLabel?: (heightCm: number) => string;
   /** Überschreibt, ob Horizontal-/Diagonalverstrebung mit aufgeführt wird (Standard: je nach Aufbautyp). */
   includeBracing?: boolean;
 }
@@ -83,15 +85,24 @@ export function buildMaterialList({
     });
   }
 
-  const totalFeet = countFeet(layout.panels);
+  const feetList = labeledFootPositions(layout.panels, heightCm);
+  const totalFeet = feetList.length;
   if (totalFeet > 0) {
-    items.push({
-      pos: pos++,
-      gruppe: 'FÜSSE',
-      artikel: footLabel ?? `Alu-Lastenverteilerfuß (LV-Fuß), BH: ${heightCm} cm`,
-      menge: totalFeet,
-      einheit: 'Stk.',
-    });
+    // Normalerweise eine Zeile (alle Füße auf der globalen Höhe), aber einzelne Platten können
+    // eine eigene Fuß-Höhe haben (z.B. Ausgleich bei unebenem Untergrund) — dann eine eigene
+    // Zeile je tatsächlich vorkommender Höhe, statt sie unter der globalen Höhe zu verstecken.
+    const countsByHeight = new Map<number, number>();
+    for (const f of feetList) countsByHeight.set(f.heightCm, (countsByHeight.get(f.heightCm) ?? 0) + 1);
+    const formatLabel = footLabel ?? ((h: number) => `Alu-Lastenverteilerfuß (LV-Fuß), BH: ${h} cm`);
+    for (const [hCm, count] of Array.from(countsByHeight.entries()).sort((a, b) => a[0] - b[0])) {
+      items.push({
+        pos: pos++,
+        gruppe: 'FÜSSE',
+        artikel: formatLabel(hCm),
+        menge: count,
+        einheit: 'Stk.',
+      });
+    }
   }
 
   if (activeRailingSides.length > 0) {

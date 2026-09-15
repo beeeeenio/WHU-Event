@@ -33,6 +33,10 @@ export interface PanelInstance {
   /** Nur gesetzt für das echte Dreieckpodest — siehe Piece2D.corner in customShape.ts für die
    *  volle Erklärung (insb. die (1,1)-Mehrdeutigkeit mit dem echten 1×1-Rechteck). */
   corner?: TriangleCorner;
+  /** Überschreibt die Fuß-Höhe NUR für diese Platte (z.B. Ausgleich bei unebenem Untergrund) —
+   *  sonst gilt die globale Aufbauhöhe. Betrifft nur Fuß-Farbe/Materialliste, nicht die Höhe der
+   *  Platte selbst (die Deckfläche bleibt eben, siehe labeledFootPositions in feet.ts). */
+  footHeightCm?: number;
 }
 
 export interface LayoutResult {

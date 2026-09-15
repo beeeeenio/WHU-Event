@@ -6,8 +6,6 @@ import type { LayoutResult, RailingSide } from '../../domain/types';
 interface Props {
   layout: LayoutResult;
   feet: LabeledFootPosition[];
-  /** Bauhöhe dieser Ebene (cm) — bestimmt die Fußfarbe (einheitliche Höhen-Farbkodierung im ganzen Tool). */
-  heightCm: number;
   railingSides?: RailingSide[];
   railingConfigurable?: boolean;
   onToggleRailingSide?: (side: RailingSide) => void;
@@ -34,7 +32,6 @@ const SIDE_LABELS: Record<RailingSide, string> = {
 export function FloorPlanSVG({
   layout,
   feet,
-  heightCm,
   railingSides = [],
   railingConfigurable = false,
   onToggleRailingSide,
@@ -42,7 +39,6 @@ export function FloorPlanSVG({
   minWidthM,
 }: Props) {
   const { widthM, depthM, panels } = layout;
-  const footColor = footColorForHeight(heightCm);
   const pad = 0.8;
   const effectiveWidthM = Math.max(widthM, minWidthM ?? 0);
   const viewBox = `${-pad} ${-pad} ${effectiveWidthM + pad * 2} ${depthM + pad * 2}`;
@@ -126,11 +122,12 @@ export function FloorPlanSVG({
       })}
       {feet.map((f, i) => {
         const shared = f.podeste.length > 1;
+        const footColor = footColorForHeight(f.heightCm);
         return (
           <g key={i}>
             <circle cx={f.renderX} cy={f.renderY} r={0.07} fill={footColor}>
               <title>
-                Podest {f.ownerPodest}, Fußhöhe {heightCm} cm
+                Podest {f.ownerPodest}, Fußhöhe {f.heightCm} cm
                 {shared ? ` (Fuß trägt außerdem Podest ${f.podeste.filter((n) => n !== f.ownerPodest).join(', ')})` : ''}
               </title>
             </circle>
@@ -219,7 +216,7 @@ export function FloorPlanSVG({
       </svg>
       {showLabels && (
         <p className="text-xs text-[var(--color-text-muted)]">
-          Graue Zahl in der Platte = Podest-Nummer. Farbiges Schild (Farbe = Fußhöhe {heightCm} cm, siehe Legende) =
+          Graue Zahl in der Platte = Podest-Nummer. Farbiges Schild (Farbe = Fußhöhe, siehe Legende) =
           Fuß, sichtbar in die Platte gezeichnet, an der er festgemacht ist (bei geteilten Ecken: die Platte mit der
           niedrigsten Nummer — auf den Punkt tippen/hovern zeigt, welche weiteren Podeste sich diesen Fuß teilen).
         </p>

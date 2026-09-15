@@ -49,7 +49,8 @@ function isValidPiece2D(p: unknown): p is Piece2D {
     typeof v?.y === 'number' &&
     typeof v?.w === 'number' &&
     typeof v?.d === 'number' &&
-    (v?.corner === undefined || VALID_CORNERS.includes(v.corner))
+    (v?.corner === undefined || VALID_CORNERS.includes(v.corner)) &&
+    (v?.footHeightCm === undefined || typeof v.footHeightCm === 'number')
   );
 }
 
@@ -95,7 +96,7 @@ export function TresenConfigurator() {
         layout: topLayout,
         heightCm: spindelHeightCm,
         activeRailingSides: [],
-        footLabel: `Alu-Verstellspindelfuß (VS-Fuß), Ausgleich ${spindelHeightCm} cm`,
+        footLabel: (h) => `Alu-Verstellspindelfuß (VS-Fuß), Ausgleich ${h} cm`,
         includeBracing: false,
       }),
     [topLayout, spindelHeightCm],
@@ -123,6 +124,9 @@ export function TresenConfigurator() {
   function baseRotatePiece(id: string) {
     setBasePieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
   }
+  function baseSetFootHeight(id: string, footHeightCm: number | undefined) {
+    setBasePieces((prev) => prev.map((p) => (p.id === id ? { ...p, footHeightCm } : p)));
+  }
 
   function topAddPieces(newPieces: FilledPiece[]) {
     setTopPieces((prev) => [...prev, ...newPieces.map((p) => ({ ...p, id: makePieceId() }))]);
@@ -135,6 +139,9 @@ export function TresenConfigurator() {
   }
   function topRotatePiece(id: string) {
     setTopPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
+  }
+  function topSetFootHeight(id: string, footHeightCm: number | undefined) {
+    setTopPieces((prev) => prev.map((p) => (p.id === id ? { ...p, footHeightCm } : p)));
   }
 
   // Setzt die Thekenplatte auf dieselbe Breite wie der aktuelle Unterbau, bei halber Tiefe —
@@ -193,6 +200,9 @@ export function TresenConfigurator() {
           onRemovePiece={baseRemovePiece}
           onMovePiece={baseMovePiece}
           onRotatePiece={baseRotatePiece}
+          onSetFootHeightOverride={baseSetFootHeight}
+          defaultHeightCm={baseHeightCm}
+          heightOptionsCm={STRUCTURE_RULES.tresen.heightOptionsCm}
           frontEdgeLabel="Unterbau-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={
@@ -243,6 +253,9 @@ export function TresenConfigurator() {
           onRemovePiece={topRemovePiece}
           onMovePiece={topMovePiece}
           onRotatePiece={topRotatePiece}
+          onSetFootHeightOverride={topSetFootHeight}
+          defaultHeightCm={spindelHeightCm}
+          heightOptionsCm={SPINDEL_HEIGHT_OPTIONS_CM}
           frontEdgeLabel="Thekenplatten-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={
@@ -303,7 +316,9 @@ export function TresenConfigurator() {
             />
           )}
 
-          {(resultTab === 'grundriss' || resultTab === '3d') && <FootColorLegend heights={[baseHeightCm, spindelHeightCm]} />}
+          {(resultTab === 'grundriss' || resultTab === '3d') && (
+            <FootColorLegend heights={[...baseLabeledFeet, ...topLabeledFeet].map((f) => f.heightCm)} />
+          )}
 
           {resultTab === 'grundriss' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -312,7 +327,6 @@ export function TresenConfigurator() {
                 <FloorPlanSVG
                   layout={baseLayout}
                   feet={baseLabeledFeet}
-                  heightCm={baseHeightCm}
                   minWidthM={Math.max(baseLayout.widthM, topLayout.widthM)}
                 />
               </div>
@@ -321,7 +335,6 @@ export function TresenConfigurator() {
                 <FloorPlanSVG
                   layout={topLayout}
                   feet={topLabeledFeet}
-                  heightCm={spindelHeightCm}
                   minWidthM={Math.max(baseLayout.widthM, topLayout.widthM)}
                 />
               </div>

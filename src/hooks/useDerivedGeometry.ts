@@ -16,7 +16,7 @@ export function useDerivedGeometry(
 ) {
   const totalFeet = useMemo(() => countFeet(layout.panels), [layout]);
   const feet = useMemo(() => footPositions(layout.panels), [layout]);
-  const labeledFeet = useMemo(() => labeledFootPositions(layout.panels), [layout]);
+  const labeledFeet = useMemo(() => labeledFootPositions(layout.panels, heightCm), [layout, heightCm]);
   const materialList = useMemo(
     () => buildMaterialList({ structureType, layout, heightCm, activeRailingSides }),
     [structureType, layout, heightCm, activeRailingSides],

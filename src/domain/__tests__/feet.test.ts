@@ -54,7 +54,7 @@ describe('countFeet — Dreieckpodest', () => {
 
 describe('labeledFootPositions — Dreieckpodest', () => {
   it('liefert für ein einzelnes Dreieck 3 beschriftete Füße, alle mit sich selbst als Eigentümer', () => {
-    const labeled = labeledFootPositions([triangle(0, 0, 'tl')]);
+    const labeled = labeledFootPositions([triangle(0, 0, 'tl')], 100);
     expect(labeled).toHaveLength(3);
     expect(labeled.every((f) => f.ownerPodest === 1)).toBe(true);
   });
@@ -71,7 +71,7 @@ describe('labeledFootPositions — Dreieckpodest', () => {
     const tri = triangle(0, 0, 'tl'); // echte Ecken: (0,0), (1,0), (0,1)
     const panels = [rectA, rectB, rectC, tri]; // Dreieck absichtlich zuletzt (höchste Podest-Nr. 4)
 
-    const labeled = labeledFootPositions(panels);
+    const labeled = labeledFootPositions(panels, 100);
     const triangleOwnedCount = labeled.filter((f) => f.podeste.includes(4) && f.ownerPodest === 4).length;
     expect(triangleOwnedCount).toBeGreaterThanOrEqual(2);
     expect(triangleOwnedCount).toBe(3);
@@ -94,7 +94,7 @@ describe('labeledFootPositions — Dreieckpodest', () => {
     const br = triangle(2, 2, 'tl');
     const panels = [center, top, bottom, left, right, tl, tr, bl, br];
 
-    const labeled = labeledFootPositions(panels);
+    const labeled = labeledFootPositions(panels, 100);
     for (let podestNr = 1; podestNr <= panels.length; podestNr++) {
       const ownedCount = labeled.filter((f) => f.ownerPodest === podestNr).length;
       expect(ownedCount).toBeGreaterThanOrEqual(1);
@@ -108,7 +108,7 @@ describe('labeledFootPositions — Dreieckpodest', () => {
   it('zwei Rechtecke, die sich nur diagonal an einer Ecke berühren, teilen sich dort KEINEN Fuß', () => {
     const a = rect(0, 0, 2, 1); // Ecke unten-rechts bei (2,1)
     const b = rect(2, 1, 2, 1); // Ecke oben-links bei (2,1) — nur dieser eine Punkt berührt sich
-    const labeled = labeledFootPositions([a, b]);
+    const labeled = labeledFootPositions([a, b], 100);
     expect(countFeet([a, b])).toBe(8); // 4 + 4, kein geteilter Punkt
     const sharedPointFeet = labeled.filter((f) => f.x === 2 && f.y === 1);
     expect(sharedPointFeet).toHaveLength(2); // zwei eigenständige Füße am selben Punkt

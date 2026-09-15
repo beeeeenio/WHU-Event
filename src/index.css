@@ -51,6 +51,52 @@
   }
 }
 
+/*
+ * Campus for Finance (CFF) CI — "Branding & Design Guidelines" v2.1 (CFF_Brand_Guidelines_Context.md).
+ * Corrected after CFF's own reviewer flagged the first pass as not matching the guidelines —
+ * that first version invented values the guidelines explicitly don't cover; this one only uses
+ * values the .md actually states or documents as observed:
+ * - Section 2.6: "[brand-color] background + white wordmark + 4-color arches — PRIMARY
+ *   rendition, should be used whenever possible." Section 11 confirms this matches CFF's own
+ *   real website (dark Deep Navy hero as the DEFAULT homepage look, not a dark-mode variant).
+ *   So — unlike forumWHU — CFF does NOT adapt to the system light/dark preference: one constant
+ *   look, matching its own stated primary rendition. (Section 10.10 explicitly lists "dark mode /
+ *   theming" as undefined in the guidelines and says to ask before inventing — so this CI no
+ *   longer invents a separate dark variant at all.)
+ * - Section 3.4/3.6: the actual observed primary button fill is `#122BAE` ("Get Early Access",
+ *   "JOIN NOW"), used identically regardless of surface — NOT the raw brand navy `#0C0734`
+ *   itself, which the first pass used by mistake.
+ * - Section 3.6: "Body copy on dark ... measured `#AAA8B8` on Navy" and "Dividers ... white at
+ *   ~10% opacity" — used here verbatim instead of an invented shade pick.
+ * Panel/foot/grid colors stay as-is regardless of CI — those render the real physical NivTec
+ * equipment, not an organization's brand identity, so they don't belong to either CI.
+ */
+:root[data-ci='cff'] {
+  --color-bg: #06041b; /* Deep Navy shade 6 (section 3.2) */
+  --color-surface: #0c0734; /* main Deep Navy — the logo's own documented primary-rendition surface */
+  --color-border: rgba(255, 255, 255, 0.12); /* guidelines' own "dividers ~10% white opacity" (3.6) */
+  --color-text: #ffffff;
+  --color-text-muted: #aaa8b8; /* guidelines' own measured "body copy on dark, on Navy" value (3.6) */
+  --color-accent: #122bae; /* guidelines' own documented/observed primary button fill (3.4/3.6) */
+  --color-accent-contrast: #ffffff;
+  --color-railing: #122bae;
+}
+
+.brand-logo-light {
+  display: block;
+}
+.brand-logo-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  .brand-logo-light {
+    display: none;
+  }
+  .brand-logo-dark {
+    display: block;
+  }
+}
+
 html,
 body,
 #root {

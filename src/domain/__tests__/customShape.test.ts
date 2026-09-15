@@ -134,7 +134,7 @@ describe('buildLayoutFromPieces', () => {
     expect(layout.panels).toHaveLength(2);
     // 4 unabhängige Ecken je Stück wären 8 — der gemeinsame Eckpunkt (2,0) spart einen Fuß.
     expect(countFeet(layout.panels)).toBe(7);
-    const shared = labeledFootPositions(layout.panels).find((f) => f.x === 2 && f.y === 0);
+    const shared = labeledFootPositions(layout.panels, 100).find((f) => f.x === 2 && f.y === 0);
     expect(shared?.podeste).toHaveLength(2);
   });
 

@@ -40,6 +40,8 @@ export interface Piece2D {
    *  (isSondermassPiece/isPrimaryPanelPiece/catalogSizeKey) aufgerufen wird, sonst würde ein
    *  Dreieck fälschlich als das Rechteck erkannt. */
   corner?: TriangleCorner;
+  /** Überschreibt die Fuß-Höhe NUR für diese Platte — siehe PanelInstance.footHeightCm. */
+  footHeightCm?: number;
 }
 
 /** Frisch erzeugtes Stück ohne id — von Keil/Zeichnen-Werkzeug erzeugt, bevor es dem
@@ -199,6 +201,7 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
         sizeKey: TRIANGLE_SIZE_KEY,
         isSondermass: false,
         corner: piece.corner,
+        footHeightCm: piece.footHeightCm,
       });
       panelCountsBySize[TRIANGLE_SIZE_KEY] = (panelCountsBySize[TRIANGLE_SIZE_KEY] ?? 0) + 1;
       maxX = Math.max(maxX, piece.x + piece.w);
@@ -207,7 +210,15 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
     }
     const sondermass = isSondermassPiece(piece.w, piece.d);
     const key = catalogSizeKey(piece.w, piece.d);
-    panels.push({ x: round3(piece.x), y: round3(piece.y), w: piece.w, d: piece.d, sizeKey: key, isSondermass: sondermass });
+    panels.push({
+      x: round3(piece.x),
+      y: round3(piece.y),
+      w: piece.w,
+      d: piece.d,
+      sizeKey: key,
+      isSondermass: sondermass,
+      footHeightCm: piece.footHeightCm,
+    });
     panelCountsBySize[key] = (panelCountsBySize[key] ?? 0) + 1;
     hasSondermass = hasSondermass || sondermass;
     maxX = Math.max(maxX, piece.x + piece.w);
