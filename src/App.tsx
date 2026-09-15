@@ -15,28 +15,49 @@ const TABS: Array<{ id: TabId; label: string }> = [
 // Jeder Techie einer WHU-Initiative (forumWHU, Campus for Finance, ...) ist gleichzeitig Teil
 // von WHU Event — das Tool wird deshalb von mehreren Initiativen genutzt, mit je eigener CI,
 // während "WHU Event" als das eigentlich verantwortliche Team immer sichtbar bleibt.
-type CiId = 'forumwhu' | 'cff';
+type CiId = 'forumwhu' | 'cff' | 'whuevent';
 const CI_STORAGE_KEY = 'nivtec-ci';
 const CIS: Array<{ id: CiId; label: string }> = [
   { id: 'forumwhu', label: 'forum WHU' },
   { id: 'cff', label: 'Campus for Finance' },
+  { id: 'whuevent', label: 'WHU Event' },
 ];
+
+/** Logos mit eigenem System-Light/Dark-Wechsel (kein fest-dunkles CI wie CFF) — brauchen bei
+ *  aktivem CFF trotzdem zwangsweise die helle Variante, weil die Header-Fläche dann IMMER
+ *  Deep Navy ist (CFF hat keinen System-Light/Dark-Wechsel mehr, siehe CFF-CSS). */
+function AdaptiveLogo({ light, dark, alt, activeCi }: { light: string; dark: string; alt: string; activeCi: CiId }) {
+  if (activeCi === 'cff') {
+    return <img src={dark} alt={alt} className="h-6 w-auto" />;
+  }
+  return (
+    <>
+      <img src={light} alt={alt} className="brand-logo-light h-6 w-auto" />
+      <img src={dark} alt={alt} className="brand-logo-dark h-6 w-auto" />
+    </>
+  );
+}
 
 /** Logo-Grafik je CI — wird direkt IN den Umschalt-Buttons gezeigt statt danebenstehendem Text. */
 function CiLogo({ id, activeCi }: { id: CiId; activeCi: CiId }) {
   if (id === 'forumwhu') {
-    // Der Button sitzt auf der Header-Fläche, die sich mit der AKTIVEN CI ändert — bei aktivem
-    // CFF ist das immer Deep Navy (siehe CFF-CSS, kein System-Light/Dark mehr), also IMMER die
-    // weiße Variante, unabhängig vom System-Modus. Ist forumWHU selbst aktiv, gilt weiterhin
-    // dessen eigener System-Light/Dark-Wechsel (die ursprüngliche .brand-logo-*-Logik).
-    if (activeCi === 'cff') {
-      return <img src="/brand/forumwhu-mark-white.png" alt="forum WHU" className="h-6 w-auto" />;
-    }
     return (
-      <>
-        <img src="/brand/forumwhu-mark.png" alt="forum WHU" className="brand-logo-light h-6 w-auto" />
-        <img src="/brand/forumwhu-mark-white.png" alt="forum WHU" className="brand-logo-dark h-6 w-auto" />
-      </>
+      <AdaptiveLogo
+        light="/brand/forumwhu-mark.png"
+        dark="/brand/forumwhu-mark-white.png"
+        alt="forum WHU"
+        activeCi={activeCi}
+      />
+    );
+  }
+  if (id === 'whuevent') {
+    return (
+      <AdaptiveLogo
+        light="/brand/whuevent-mark-black.svg"
+        dark="/brand/whuevent-mark-white.svg"
+        alt="WHU Event"
+        activeCi={activeCi}
+      />
     );
   }
   // CFF-Logodatei ist nur als weiße Version vorhanden — laut Guidelines exakt für den Fall
@@ -54,7 +75,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('buehne');
   const [ci, setCi] = useState<CiId>(() => {
     const saved = localStorage.getItem(CI_STORAGE_KEY);
-    return saved === 'cff' ? 'cff' : 'forumwhu';
+    return saved === 'cff' || saved === 'whuevent' ? saved : 'forumwhu';
   });
 
   useEffect(() => {

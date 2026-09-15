@@ -90,6 +90,7 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
     });
   }
 
+  const footColor = toHex(footColorForHeight(heightCm));
   const footDiameterIn = Math.max(0.07, Math.min(0.3, 0.16 * scale));
   for (const f of feet) {
     slide.addShape('ellipse', {
@@ -97,7 +98,7 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
       y: offsetY + f.renderY * scale - footDiameterIn / 2,
       w: footDiameterIn,
       h: footDiameterIn,
-      fill: { color: toHex(footColorForHeight(f.heightCm)) },
+      fill: { color: footColor },
       line: { color: '000000', width: 0.5 },
     });
   }

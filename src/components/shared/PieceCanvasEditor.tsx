@@ -27,13 +27,6 @@ interface Props {
   onRemovePiece: (id: string) => void;
   onMovePiece: (id: string, x: number, y: number) => void;
   onRotatePiece: (id: string) => void;
-  /** Setzt/löscht die Fuß-Höhen-Überschreibung einer einzelnen Platte (undefined = zurück auf
-   *  die globale Aufbauhöhe) — nur sichtbar/bedienbar, wenn onSetFootHeightOverride gesetzt ist. */
-  onSetFootHeightOverride?: (id: string, heightCm: number | undefined) => void;
-  /** Globale Aufbauhöhe dieser Ebene — Ausgangswert/„Standard“ für die Fuß-Höhen-Überschreibung. */
-  defaultHeightCm?: number;
-  /** Erlaubte Höhen für die Fuß-Höhen-Überschreibung (dieselbe Serie wie der Haupt-Höhenregler). */
-  heightOptionsCm?: number[];
   /** Beschriftung über der Kante, an der y=0 liegt (z.B. "Bühnenvorderkante"). */
   frontEdgeLabel?: string;
   /** Erzwingt eine Mindest-viewBox-Breite — z.B. damit zwei Ebenen (Tresen: Unterbau +
@@ -150,71 +143,6 @@ function DimensionLabel({ x, y, w, d }: { x: number; y: number; w: number; d: nu
   );
 }
 
-/** Fuß-Höhen-Überschreibung für die ausgewählte Platte — z.B. Ausgleich bei unebenem
- *  Untergrund. Zeigt bei aktiver Überschreibung zusätzlich einen "Standard"-Link zum
- *  Zurücksetzen; landet die Stufe zufällig wieder genau auf der globalen Höhe, wird die
- *  Überschreibung automatisch gelöscht statt redundant gleich gespeichert zu bleiben. */
-function FootHeightStepper({
-  piece,
-  defaultHeightCm,
-  heightOptionsCm,
-  onChange,
-}: {
-  piece: Piece2D;
-  defaultHeightCm: number;
-  heightOptionsCm: number[];
-  onChange: (heightCm: number | undefined) => void;
-}) {
-  const effective = piece.footHeightCm ?? defaultHeightCm;
-  const isOverridden = piece.footHeightCm !== undefined;
-  const sorted = [...heightOptionsCm].sort((a, b) => a - b);
-
-  function step(direction: 1 | -1) {
-    const currentIndex = sorted.indexOf(effective);
-    const fallbackIndex = sorted.reduce(
-      (best, v, i) => (Math.abs(v - effective) < Math.abs(sorted[best] - effective) ? i : best),
-      0,
-    );
-    const nextIndex = Math.min(sorted.length - 1, Math.max(0, (currentIndex >= 0 ? currentIndex : fallbackIndex) + direction));
-    const next = sorted[nextIndex];
-    onChange(next === defaultHeightCm ? undefined : next);
-  }
-
-  return (
-    <div className="flex items-center gap-1">
-      <span className="text-xs text-[var(--color-text-muted)]">Fuß-Höhe:</span>
-      <button
-        type="button"
-        onClick={() => step(-1)}
-        className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs hover:border-[var(--color-accent)]"
-        aria-label="Fuß-Höhe verringern"
-      >
-        −
-      </button>
-      <span
-        className="min-w-[3.5rem] text-center text-xs"
-        style={{ fontFamily: 'var(--font-mono)', color: isOverridden ? 'var(--color-accent)' : 'var(--color-text)' }}
-        title={isOverridden ? 'Abweichend von der globalen Aufbauhöhe' : 'Globale Aufbauhöhe'}
-      >
-        {effective} cm
-      </span>
-      <button
-        type="button"
-        onClick={() => step(1)}
-        className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs hover:border-[var(--color-accent)]"
-        aria-label="Fuß-Höhe erhöhen"
-      >
-        +
-      </button>
-      {isOverridden && (
-        <button type="button" onClick={() => onChange(undefined)} className="text-xs text-[var(--color-text-muted)] underline">
-          Standard
-        </button>
-      )}
-    </div>
-  );
-}
-
 interface DragState {
   id: string;
   startClientX: number;
@@ -242,9 +170,6 @@ export function PieceCanvasEditor({
   onRemovePiece,
   onMovePiece,
   onRotatePiece,
-  onSetFootHeightOverride,
-  defaultHeightCm,
-  heightOptionsCm,
   frontEdgeLabel = 'Vorderkante',
   minCanvasWidthM,
   referenceFootprint,
@@ -675,19 +600,11 @@ export function PieceCanvasEditor({
         </div>
       )}
       {selectedPiece && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
           <span className="text-[var(--color-text)]">
             Ausgewählt: {formatM(selectedPiece.w)}×{formatM(selectedPiece.d)} m
           </span>
-          <div className="flex flex-wrap items-center gap-2">
-            {onSetFootHeightOverride && defaultHeightCm !== undefined && heightOptionsCm && heightOptionsCm.length > 0 && (
-              <FootHeightStepper
-                piece={selectedPiece}
-                defaultHeightCm={defaultHeightCm}
-                heightOptionsCm={heightOptionsCm}
-                onChange={(h) => onSetFootHeightOverride(selectedPiece.id, h)}
-              />
-            )}
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={rotateSelected}

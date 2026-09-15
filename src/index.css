@@ -82,6 +82,36 @@
   --color-railing: #122bae;
 }
 
+/*
+ * WHU Event CI — no brand-guidelines document exists for this one (unlike forumWHU/CFF), so
+ * rather than invent colors, this reuses the only real source available: the black/gray ink
+ * (#000000 / #515256) of the WHU-Event_Logo-RGB_black.svg file itself. Adapts to system
+ * light/dark like forumWHU, since (unlike CFF) nothing documents a fixed "always dark" look.
+ */
+:root[data-ci='whuevent'] {
+  --color-bg: #f4f4f5;
+  --color-surface: #ffffff;
+  --color-border: #d4d4d8;
+  --color-text: #000000;
+  --color-text-muted: #515256; /* the logo's own tagline gray */
+  --color-accent: #000000;
+  --color-accent-contrast: #ffffff;
+  --color-railing: #000000;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-ci='whuevent'] {
+    --color-bg: #18181b;
+    --color-surface: #27272a;
+    --color-border: #3f3f46;
+    --color-text: #ffffff;
+    --color-text-muted: #c7c7cc;
+    --color-accent: #ffffff;
+    --color-accent-contrast: #000000;
+    --color-railing: #ffffff;
+  }
+}
+
 .brand-logo-light {
   display: block;
 }

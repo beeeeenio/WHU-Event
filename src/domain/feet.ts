@@ -142,9 +142,6 @@ export interface LabeledFootPosition {
   podeste: number[];
   /** Die eine Platte (kleinste Nummer der Beteiligten), in die der Fuß gezeichnet wird. */
   ownerPodest: number;
-  /** Effektive Höhe dieses einen Fußes: `footHeightCm` der Eigentümer-Platte, falls gesetzt,
-   *  sonst die globale Aufbauhöhe — bestimmt nur Farbe/Materialliste, siehe PanelInstance.footHeightCm. */
-  heightCm: number;
 }
 
 /**
@@ -163,7 +160,7 @@ export function panelNumbers(panels: PanelInstance[]): Map<PanelInstance, number
  * der Podeste, die sich diesen Fuß teilen — beantwortet direkt "an welchem Podest
  * hängt dieser Fuß".
  */
-export function labeledFootPositions(panels: PanelInstance[], defaultHeightCm: number): LabeledFootPosition[] {
+export function labeledFootPositions(panels: PanelInstance[]): LabeledFootPosition[] {
   const groups = groupCornersIntoFeet(panels);
   const groupPoints = groups.map((g) => ({ x: g[0].x, y: g[0].y }));
   const xs = Array.from(new Set(groupPoints.map((p) => roundMM(p.x)))).sort((a, b) => a - b);
@@ -253,7 +250,6 @@ export function labeledFootPositions(panels: PanelInstance[], defaultHeightCm: n
       label: `${toAxisLetters(xIndex.get(roundMM(p.x))!)}${yIndex.get(roundMM(p.y))! + 1}`,
       podeste: g.map((c) => c.panelNr),
       ownerPodest,
-      heightCm: owner.footHeightCm ?? defaultHeightCm,
     };
   });
 }

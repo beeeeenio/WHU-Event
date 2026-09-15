@@ -188,7 +188,7 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
                 )}
 
                 {tier.feet.map((f, i) => {
-                  const color = tier.footColor ?? footColorForHeight(f.heightCm);
+                  const color = tier.footColor ?? footColorForHeight(tier.heightM * 100);
                   return (
                     <mesh key={i} position={[f.renderX + offsetX, baseY + tier.heightM / 2, f.renderY + offsetZ]}>
                       <cylinderGeometry args={[FOOT_RADIUS_M, FOOT_RADIUS_M, tier.heightM, 16]} />
