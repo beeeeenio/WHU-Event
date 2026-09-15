@@ -23,17 +23,30 @@ const CIS: Array<{ id: CiId; label: string }> = [
   { id: 'whuevent', label: 'WHU Event' },
 ];
 
-/** Logos mit eigenem System-Light/Dark-Wechsel (kein fest-dunkles CI wie CFF) — brauchen bei
- *  aktivem CFF trotzdem zwangsweise die helle Variante, weil die Header-Fläche dann IMMER
- *  Deep Navy ist (CFF hat keinen System-Light/Dark-Wechsel mehr, siehe CFF-CSS). */
-function AdaptiveLogo({ light, dark, alt, activeCi }: { light: string; dark: string; alt: string; activeCi: CiId }) {
+/** Wählt die passende Logo-Variante für die tatsächlich sichtbare Kopfzeilenfläche: die "helle"
+ *  Variante folgt dem System-Light/Dark-Wechsel wie gewohnt — außer wenn CFF aktiv ist, dann ist
+ *  die Fläche IMMER Deep Navy (CFF hat keinen eigenen System-Light/Dark-Wechsel, siehe CFF-CSS),
+ *  deshalb wird dann zwangsweise die dunkle Variante gezeigt, unabhängig vom System-Modus. */
+function AdaptiveLogo({
+  light,
+  dark,
+  alt,
+  activeCi,
+  heightClassName = 'h-6 w-auto',
+}: {
+  light: string;
+  dark: string;
+  alt: string;
+  activeCi: CiId;
+  heightClassName?: string;
+}) {
   if (activeCi === 'cff') {
-    return <img src={dark} alt={alt} className="h-6 w-auto" />;
+    return <img src={dark} alt={alt} className={heightClassName} />;
   }
   return (
     <>
-      <img src={light} alt={alt} className="brand-logo-light h-6 w-auto" />
-      <img src={dark} alt={alt} className="brand-logo-dark h-6 w-auto" />
+      <img src={light} alt={alt} className={`brand-logo-light ${heightClassName}`} />
+      <img src={dark} alt={alt} className={`brand-logo-dark ${heightClassName}`} />
     </>
   );
 }
@@ -60,14 +73,18 @@ function CiLogo({ id, activeCi }: { id: CiId; activeCi: CiId }) {
       />
     );
   }
-  // CFF-Logodatei ist nur als weiße Version vorhanden — laut Guidelines exakt für den Fall
-  // gedacht ("weißes Wortmarke + 4-farbige Bögen auf der Markenfarbe — PRIMARY rendition"),
-  // deshalb hier bewusst IMMER auf einem eigenen Deep-Navy-Chip statt direkt auf der
-  // Seitenfläche — so stimmt der Kontrast unabhängig vom Light/Dark-Modus dieser App.
+  // Jetzt gibt es beide Wortmarken-Varianten (dunkles Navy-Logo + die bestehende weiße), deshalb
+  // kein Chip mehr nötig — genau wie bei WHU Event wählt AdaptiveLogo die passende Variante für
+  // die jeweils tatsächlich sichtbare Kopfzeilenfläche (hell bei System-Light/forumWHU/WHU Event,
+  // weiß auf der immer dunklen CFF-eigenen Fläche, wenn CFF selbst aktiv ist).
   return (
-    <span className="inline-flex items-center rounded px-2 py-1" style={{ backgroundColor: '#0C0734' }}>
-      <img src="/brand/cff-main-white.svg" alt="Campus for Finance" className="h-3.5 w-auto" />
-    </span>
+    <AdaptiveLogo
+      light="/brand/cff-main-dark.png"
+      dark="/brand/cff-main-white.svg"
+      alt="Campus for Finance"
+      activeCi={activeCi}
+      heightClassName="h-3.5 w-auto"
+    />
   );
 }
 

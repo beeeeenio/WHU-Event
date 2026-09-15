@@ -126,8 +126,7 @@ function addMainTitle(slide: PptxGenJS.Slide, title: string, availableW: number)
 
 /**
  * Platziert das Logo der aktuell aktiven CI oben rechts auf der Folie — dieselbe Initiative, die
- * gerade im Tool ausgewählt ist. CFF hat nur eine weiße Wortmarke (siehe CI_PPTX_LOGOS), die auf
- * einer weißen Folie sonst unsichtbar wäre, deshalb bekommt sie hier ihren eigenen Deep-Navy-Chip.
+ * gerade im Tool ausgewählt ist.
  */
 function addCiLogo(slide: PptxGenJS.Slide, ci: CiId): void {
   const logo = CI_PPTX_LOGOS[ci];
@@ -135,19 +134,6 @@ function addCiLogo(slide: PptxGenJS.Slide, ci: CiId): void {
   const widthIn = heightIn * logo.aspectRatio;
   const x = SLIDE_WIDTH_IN - MARGIN_IN - widthIn;
   const y = 0.15;
-
-  if (logo.slideChipColorHex) {
-    const paddingIn = 0.08;
-    slide.addShape('roundRect', {
-      x: x - paddingIn,
-      y: y - paddingIn,
-      w: widthIn + paddingIn * 2,
-      h: heightIn + paddingIn * 2,
-      rectRadius: 0.06,
-      fill: { color: logo.slideChipColorHex },
-      line: { color: logo.slideChipColorHex, width: 0 },
-    });
-  }
 
   slide.addImage({ path: logo.imagePath, x, y, w: widthIn, h: heightIn });
 }
