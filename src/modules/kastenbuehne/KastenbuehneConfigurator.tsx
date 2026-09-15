@@ -12,7 +12,7 @@ import { StairsRampCalculator } from '../../components/shared/StairsRampCalculat
 import { SummaryStats } from '../../components/shared/SummaryStats';
 import { WarningBanner } from '../../components/shared/WarningBanner';
 import { buildLayoutFromPieces, makePieceId, rotatePieceInPlace, type FilledPiece, type Piece2D } from '../../domain/customShape';
-import { isBracingRequired, isHorizontalBracingRequired, isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
+import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import type { TriangleCorner } from '../../domain/types';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
 
@@ -48,8 +48,6 @@ export function KastenbuehneConfigurator() {
   // Kastenbühne ist regeltechnisch eine ganz normale Bühne (gleiche Höhenserie,
   // Verstrebungs-/Geländerschwellen) — nur der Bauweg dahin ist ein anderer.
   const { totalFeet, labeledFeet, materialList } = useDerivedGeometry(layout, 'buehne', heightCm, []);
-  const bracingRequired = isBracingRequired('buehne', heightCm);
-  const horizontalBracingRequired = isHorizontalBracingRequired('buehne', heightCm);
   const railingRequired = isRailingRequired('buehne', heightCm);
 
   const hasContent = pieces.length > 0;
@@ -107,12 +105,6 @@ export function KastenbuehneConfigurator() {
             Fußtyp: Alu-Lastenverteilerfuß (LV-Fuß), Höhenserie 20–200 cm
           </span>
         </div>
-        {bracingRequired && (
-          <WarningBanner>Ab 80 cm Aufbauhöhe ist eine Diagonalverstrebung erforderlich.</WarningBanner>
-        )}
-        {horizontalBracingRequired && (
-          <WarningBanner>Über 140 cm Aufbauhöhe ist zusätzlich eine Horizontalverstrebung erforderlich.</WarningBanner>
-        )}
         <PieceCanvasEditor
           pieces={pieces}
           onAddPieces={addPieces}
