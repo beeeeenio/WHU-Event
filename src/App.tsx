@@ -23,8 +23,15 @@ const CIS: Array<{ id: CiId; label: string }> = [
 ];
 
 /** Logo-Grafik je CI — wird direkt IN den Umschalt-Buttons gezeigt statt danebenstehendem Text. */
-function CiLogo({ id }: { id: CiId }) {
+function CiLogo({ id, activeCi }: { id: CiId; activeCi: CiId }) {
   if (id === 'forumwhu') {
+    // Der Button sitzt auf der Header-Fläche, die sich mit der AKTIVEN CI ändert — bei aktivem
+    // CFF ist das immer Deep Navy (siehe CFF-CSS, kein System-Light/Dark mehr), also IMMER die
+    // weiße Variante, unabhängig vom System-Modus. Ist forumWHU selbst aktiv, gilt weiterhin
+    // dessen eigener System-Light/Dark-Wechsel (die ursprüngliche .brand-logo-*-Logik).
+    if (activeCi === 'cff') {
+      return <img src="/brand/forumwhu-mark-white.png" alt="forum WHU" className="h-6 w-auto" />;
+    }
     return (
       <>
         <img src="/brand/forumwhu-mark.png" alt="forum WHU" className="brand-logo-light h-6 w-auto" />
@@ -84,7 +91,7 @@ function App() {
                     : 'border-transparent opacity-40 hover:opacity-70'
                 }`}
               >
-                <CiLogo id={c.id} />
+                <CiLogo id={c.id} activeCi={ci} />
               </button>
             ))}
           </div>
