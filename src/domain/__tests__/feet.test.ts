@@ -100,6 +100,27 @@ describe('labeledFootPositions — Dreieckpodest', () => {
       expect(ownedCount).toBeGreaterThanOrEqual(1);
     }
   });
+
+  // Bug-Report (2026-09-15, PPTX-Export-Screenshot): eine freistehende Platte, die eine andere
+  // nur DIAGONAL an einer Ecke berührt (kein gemeinsamer Kantenabschnitt, z.B. weil sie den
+  // Aufbau nach unten-rechts fortsetzt), verlor eine ihrer 4 Ecken an die Nachbarplatte — obwohl
+  // die beiden dort keine Nut-Feder-Verbindung teilen und daher gar keinen Fuß teilen können.
+  it('zwei Rechtecke, die sich nur diagonal an einer Ecke berühren, teilen sich dort KEINEN Fuß', () => {
+    const a = rect(0, 0, 2, 1); // Ecke unten-rechts bei (2,1)
+    const b = rect(2, 1, 2, 1); // Ecke oben-links bei (2,1) — nur dieser eine Punkt berührt sich
+    const labeled = labeledFootPositions([a, b]);
+    expect(countFeet([a, b])).toBe(8); // 4 + 4, kein geteilter Punkt
+    const sharedPointFeet = labeled.filter((f) => f.x === 2 && f.y === 1);
+    expect(sharedPointFeet).toHaveLength(2); // zwei eigenständige Füße am selben Punkt
+    expect(sharedPointFeet.map((f) => f.ownerPodest).sort()).toEqual([1, 2]); // je einer pro Platte
+    expect(sharedPointFeet.every((f) => f.podeste.length === 1)).toBe(true); // keiner "teilt" sich strukturell
+  });
+
+  it('Regression: ein rechtwinklig (nicht nur diagonal) angebautes Rechteck teilt sich den Eckpunkt weiterhin normal', () => {
+    const a = rect(0, 0, 2, 1);
+    const b = rect(2, 0, 2, 1); // volle gemeinsame Kante bei x=2
+    expect(countFeet([a, b])).toBe(6); // 4+4 minus 2 geteilte Punkte, nicht 8
+  });
 });
 
 function byXY(a: { x: number; y: number }, b: { x: number; y: number }): number {

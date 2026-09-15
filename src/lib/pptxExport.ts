@@ -47,7 +47,8 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
   const { layout, feet, heightCm, label } = section;
   if (layout.widthM <= 0 || layout.depthM <= 0) return;
 
-  slide.addText(`${label} — ${layout.widthM.toFixed(2)} × ${layout.depthM.toFixed(2)} m, BH ${heightCm} cm`, {
+  const dims = `${layout.widthM.toFixed(2)} × ${layout.depthM.toFixed(2)} m, BH ${heightCm} cm`;
+  slide.addText(label ? `${label} — ${dims}` : dims, {
     x: region.x,
     y: region.y,
     w: region.w,
@@ -142,7 +143,7 @@ export async function exportLayoutAsPptx(
   addMainTitle(slide, title, availableW);
   drawSection(
     slide,
-    { layout, feet, heightCm, label: `${layout.widthM.toFixed(2)} × ${layout.depthM.toFixed(2)} m` },
+    { layout, feet, heightCm, label: '' },
     { x: MARGIN_IN, y: MARGIN_IN + TITLE_H_IN, w: availableW, h: availableH },
   );
 
