@@ -2,6 +2,7 @@ import PptxGenJS from 'pptxgenjs';
 import type { LabeledFootPosition } from '../domain/feet';
 import { footColorForHeight } from '../domain/footColorScale';
 import type { LayoutResult, TriangleCorner } from '../domain/types';
+import { CI_PPTX_LOGOS, type CiId } from './ci';
 
 /**
  * PowerPoints eingebautes "rtTriangle"-Autoshape hat bei rot=0° den rechten Winkel laut
@@ -124,6 +125,34 @@ function addMainTitle(slide: PptxGenJS.Slide, title: string, availableW: number)
 }
 
 /**
+ * Platziert das Logo der aktuell aktiven CI oben rechts auf der Folie — dieselbe Initiative, die
+ * gerade im Tool ausgewählt ist. CFF hat nur eine weiße Wortmarke (siehe CI_PPTX_LOGOS), die auf
+ * einer weißen Folie sonst unsichtbar wäre, deshalb bekommt sie hier ihren eigenen Deep-Navy-Chip.
+ */
+function addCiLogo(slide: PptxGenJS.Slide, ci: CiId): void {
+  const logo = CI_PPTX_LOGOS[ci];
+  const heightIn = 0.4;
+  const widthIn = heightIn * logo.aspectRatio;
+  const x = SLIDE_WIDTH_IN - MARGIN_IN - widthIn;
+  const y = 0.15;
+
+  if (logo.slideChipColorHex) {
+    const paddingIn = 0.08;
+    slide.addShape('roundRect', {
+      x: x - paddingIn,
+      y: y - paddingIn,
+      w: widthIn + paddingIn * 2,
+      h: heightIn + paddingIn * 2,
+      rectRadius: 0.06,
+      fill: { color: logo.slideChipColorHex },
+      line: { color: logo.slideChipColorHex, width: 0 },
+    });
+  }
+
+  slide.addImage({ path: logo.imagePath, x, y, w: widthIn, h: heightIn });
+}
+
+/**
  * Exportiert einen einzelnen Grundriss als editierbare PowerPoint-Folie: jede Platte
  * ist ein eigenes Rechteck-Shape, jeder Fuß ein eigenes Kreis-Shape (Farbe nach
  * Fußhöhe, siehe footColorScale) — beides in PowerPoint frei verschiebbar/anpassbar.
@@ -133,6 +162,7 @@ export async function exportLayoutAsPptx(
   feet: LabeledFootPosition[],
   heightCm: number,
   filename: string,
+  ci: CiId,
   title = 'Grundrissplan',
 ): Promise<void> {
   const pptx = new PptxGenJS();
@@ -141,6 +171,7 @@ export async function exportLayoutAsPptx(
   const availableH = SLIDE_HEIGHT_IN - MARGIN_IN * 2 - TITLE_H_IN;
 
   addMainTitle(slide, title, availableW);
+  addCiLogo(slide, ci);
   drawSection(
     slide,
     { layout, feet, heightCm, label: '' },
@@ -155,13 +186,19 @@ export async function exportLayoutAsPptx(
  * Tresen-Unterbau + Thekenplatte) — genau wie die 2D-Ansicht im Tool sie
  * nebeneinander zeigt.
  */
-export async function exportSectionsAsPptx(sections: PptxSection[], filename: string, title: string): Promise<void> {
+export async function exportSectionsAsPptx(
+  sections: PptxSection[],
+  filename: string,
+  ci: CiId,
+  title: string,
+): Promise<void> {
   const pptx = new PptxGenJS();
   const slide = newSlide(pptx);
   const availableW = SLIDE_WIDTH_IN - MARGIN_IN * 2;
   const availableH = SLIDE_HEIGHT_IN - MARGIN_IN * 2 - TITLE_H_IN;
 
   addMainTitle(slide, title, availableW);
+  addCiLogo(slide, ci);
 
   const count = Math.max(1, sections.length);
   const sectionW = (availableW - SECTION_GAP_IN * (count - 1)) / count;

@@ -15,6 +15,7 @@ import { buildLayoutFromPieces, makePieceId, rotatePieceInPlace, type FilledPiec
 import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import type { TriangleCorner } from '../../domain/types';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import type { CiId } from '../../lib/ci';
 
 interface KastenbuehneSavedState {
   heightCm: number;
@@ -37,7 +38,7 @@ function isValidPiece2D(p: unknown): p is Piece2D {
 
 type ResultTab = 'kennzahlen' | 'grundriss' | '3d' | 'material';
 
-export function KastenbuehneConfigurator() {
+export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   const [pieces, setPieces] = useState<Piece2D[]>([]);
   const [heightCm, setHeightCm] = useState(STRUCTURE_RULES.buehne.heightOptionsCm[0]);
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
@@ -164,6 +165,7 @@ export function KastenbuehneConfigurator() {
               pptx={{
                 sections: [{ layout, feet: labeledFeet, heightCm, label: 'Kastenbühne' }],
                 title: 'Kastenbühne',
+                ci,
               }}
             />
           </div>

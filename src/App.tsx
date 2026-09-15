@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KastenbuehneConfigurator } from './modules/kastenbuehne/KastenbuehneConfigurator';
 import { TresenConfigurator } from './modules/tresen/TresenConfigurator';
+import type { CiId } from './lib/ci';
 
 // Tisch/Tribüne (und die alte reglerbasierte Bühne) sind bewusst aus der App entfernt,
 // aber nicht gelöscht — die Dateien liegen weiter unter src/modules/{tisch,tribuene,buehne}/,
@@ -15,7 +16,6 @@ const TABS: Array<{ id: TabId; label: string }> = [
 // Jeder Techie einer WHU-Initiative (forumWHU, Campus for Finance, ...) ist gleichzeitig Teil
 // von WHU Event — das Tool wird deshalb von mehreren Initiativen genutzt, mit je eigener CI,
 // während "WHU Event" als das eigentlich verantwortliche Team immer sichtbar bleibt.
-type CiId = 'forumwhu' | 'cff' | 'whuevent';
 const CI_STORAGE_KEY = 'nivtec-ci';
 const CIS: Array<{ id: CiId; label: string }> = [
   { id: 'forumwhu', label: 'forum WHU' },
@@ -41,13 +41,13 @@ function AdaptiveLogo({ light, dark, alt, activeCi }: { light: string; dark: str
 /** Logo-Grafik je CI — wird direkt IN den Umschalt-Buttons gezeigt statt danebenstehendem Text. */
 function CiLogo({ id, activeCi }: { id: CiId; activeCi: CiId }) {
   if (id === 'forumwhu') {
+    // Eigener Beige-Chip (Brand Style Guide Primärfarbe #f4eee0, siehe index.css) wie bei Campus —
+    // dadurch ist die Logo-Fläche immer gleich hell, unabhängig von System-Dark-Mode oder aktiver
+    // CI, deshalb reicht hier die eine helle Wortmarke statt des Light/Dark-Wechsels.
     return (
-      <AdaptiveLogo
-        light="/brand/forumwhu-mark.png"
-        dark="/brand/forumwhu-mark-white.png"
-        alt="forum WHU"
-        activeCi={activeCi}
-      />
+      <span className="inline-flex items-center rounded px-2 py-1" style={{ backgroundColor: '#f4eee0' }}>
+        <img src="/brand/forumwhu-mark.png" alt="forum WHU" className="h-5 w-auto" />
+      </span>
     );
   }
   if (id === 'whuevent') {
@@ -139,8 +139,8 @@ function App() {
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
-        {activeTab === 'buehne' && <KastenbuehneConfigurator />}
-        {activeTab === 'tresen' && <TresenConfigurator />}
+        {activeTab === 'buehne' && <KastenbuehneConfigurator ci={ci} />}
+        {activeTab === 'tresen' && <TresenConfigurator ci={ci} />}
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 py-6 text-xs text-[var(--color-text-muted)]">

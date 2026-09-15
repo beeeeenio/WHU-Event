@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import type { MaterialListItem } from '../../domain/types';
+import type { CiId } from '../../lib/ci';
 import { downloadTextFile, materialListToCsv } from '../../lib/csv';
 import { exportCanvasAsPng } from '../../lib/canvasExport';
 import { exportLayoutAsPptx, exportSectionsAsPptx, type PptxSection } from '../../lib/pptxExport';
@@ -7,6 +8,8 @@ import { exportLayoutAsPptx, exportSectionsAsPptx, type PptxSection } from '../.
 export interface PptxExportData {
   sections: PptxSection[];
   title: string;
+  /** Aktive Initiative — deren Logo landet oben rechts auf der exportierten Folie. */
+  ci: CiId;
 }
 
 interface Props {
@@ -33,9 +36,9 @@ export function ExportButtons({ materialList, canvasRef, filenamePrefix, pptx }:
     if (!pptx) return;
     if (pptx.sections.length === 1) {
       const s = pptx.sections[0];
-      await exportLayoutAsPptx(s.layout, s.feet, s.heightCm, `${filenamePrefix}-grundriss.pptx`, pptx.title);
+      await exportLayoutAsPptx(s.layout, s.feet, s.heightCm, `${filenamePrefix}-grundriss.pptx`, pptx.ci, pptx.title);
     } else {
-      await exportSectionsAsPptx(pptx.sections, `${filenamePrefix}-grundriss.pptx`, pptx.title);
+      await exportSectionsAsPptx(pptx.sections, `${filenamePrefix}-grundriss.pptx`, pptx.ci, pptx.title);
     }
   }
 

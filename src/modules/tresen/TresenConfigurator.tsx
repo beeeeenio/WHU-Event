@@ -22,6 +22,7 @@ import { buildMaterialList, mergeMaterialLists } from '../../domain/materialList
 import { isBracingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import type { TriangleCorner } from '../../domain/types';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import type { CiId } from '../../lib/ci';
 
 const SPINDEL_HEIGHT_OPTIONS_CM = [10, 20, 30, 40];
 
@@ -55,7 +56,7 @@ function isValidPiece2D(p: unknown): p is Piece2D {
 
 type ResultTab = 'kennzahlen' | 'grundriss' | '3d' | 'material';
 
-export function TresenConfigurator() {
+export function TresenConfigurator({ ci }: { ci: CiId }) {
   const [baseHeightCm, setBaseHeightCm] = useState(STRUCTURE_RULES.tresen.heightOptionsCm[0]);
   const [spindelHeightCm, setSpindelHeightCm] = useState(SPINDEL_HEIGHT_OPTIONS_CM[1]);
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
@@ -288,6 +289,7 @@ export function TresenConfigurator() {
                   { layout: topLayout, feet: topLabeledFeet, heightCm: spindelHeightCm, label: 'Thekenplatte (oben)' },
                 ],
                 title: 'Tresen',
+                ci,
               }}
             />
           </div>
