@@ -112,6 +112,73 @@
   }
 }
 
+/*
+ * Sensability CI — no brand-guidelines document exists for this one either, only a palette
+ * image (Dark green #00392A, Lime green #1EB383, Orange #FC5000, Off-white #F5EEE5) plus the
+ * "S" mark itself. Mapped by direct analogy to forumWHU's own documented pattern — a bright
+ * signal color reserved for buttons/accents, a dark ink for text, a light neutral surface — since
+ * the palette has the same shape (one light neutral + one dark ink + one bright accent), plus a
+ * second bright green with no obvious separate role, used as-is for borders/dividers rather than
+ * inventing a softer tint nothing in the source material supports. Adapts to system light/dark
+ * like forumWHU, since nothing documents a fixed "always dark" look.
+ */
+:root[data-ci='sensability'] {
+  --color-bg: #f5eee5;
+  --color-surface: #f5eee5;
+  --color-border: #1eb383;
+  --color-text: #00392a;
+  --color-text-muted: rgba(0, 57, 42, 0.65);
+  --color-accent: #fc5000;
+  --color-accent-contrast: #00392a;
+  --color-railing: #fc5000;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-ci='sensability'] {
+    --color-bg: #00392a;
+    --color-surface: #00392a;
+    --color-border: #1eb383;
+    --color-text: #f5eee5;
+    --color-text-muted: rgba(245, 238, 229, 0.65);
+    --color-accent: #fc5000;
+    --color-accent-contrast: #00392a;
+    --color-railing: #fc5000;
+  }
+}
+
+/*
+ * CSCM WHU (Campus for Supply Chain Management) CI — no brand-guidelines document exists for
+ * this one either, only the logo itself and a 2-color palette (Navy #031252, White #FFFFFF) —
+ * the logo's own navy ink measures ~#031253, matching the given hex almost exactly, confirming
+ * it's the real brand color rather than a rendering artifact. With only one dark and one light
+ * color given (no separate accent), the navy plays every dark-ink role, the same way WHU Event's
+ * single black ink does. Adapts to system light/dark like forumWHU/WHU Event, since nothing
+ * documents a fixed "always dark" look.
+ */
+:root[data-ci='cscm'] {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-border: rgba(3, 18, 82, 0.14);
+  --color-text: #031252;
+  --color-text-muted: rgba(3, 18, 82, 0.65);
+  --color-accent: #031252;
+  --color-accent-contrast: #ffffff;
+  --color-railing: #031252;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-ci='cscm'] {
+    --color-bg: #031252;
+    --color-surface: #031252;
+    --color-border: rgba(255, 255, 255, 0.14);
+    --color-text: #ffffff;
+    --color-text-muted: rgba(255, 255, 255, 0.65);
+    --color-accent: #ffffff;
+    --color-accent-contrast: #031252;
+    --color-railing: #ffffff;
+  }
+}
+
 .brand-logo-light {
   display: block;
 }

@@ -21,6 +21,8 @@ const CIS: Array<{ id: CiId; label: string }> = [
   { id: 'forumwhu', label: 'forum WHU' },
   { id: 'cff', label: 'Campus for Finance' },
   { id: 'whuevent', label: 'WHU Event' },
+  { id: 'sensability', label: 'Sensability' },
+  { id: 'cscm', label: 'CSCM WHU' },
 ];
 
 /** Wählt die passende Logo-Variante für die tatsächlich sichtbare Kopfzeilenfläche: die "helle"
@@ -73,18 +75,43 @@ function CiLogo({ id, activeCi }: { id: CiId; activeCi: CiId }) {
       />
     );
   }
-  // Jetzt gibt es beide Wortmarken-Varianten (dunkles Navy-Logo + die bestehende weiße), deshalb
-  // kein Chip mehr nötig — genau wie bei WHU Event wählt AdaptiveLogo die passende Variante für
-  // die jeweils tatsächlich sichtbare Kopfzeilenfläche (hell bei System-Light/forumWHU/WHU Event,
-  // weiß auf der immer dunklen CFF-eigenen Fläche, wenn CFF selbst aktiv ist).
+  if (id === 'cff') {
+    // Jetzt gibt es beide Wortmarken-Varianten (dunkles Navy-Logo + die bestehende weiße), deshalb
+    // kein Chip mehr nötig — genau wie bei WHU Event wählt AdaptiveLogo die passende Variante für
+    // die jeweils tatsächlich sichtbare Kopfzeilenfläche (hell bei System-Light/forumWHU/WHU Event,
+    // weiß auf der immer dunklen CFF-eigenen Fläche, wenn CFF selbst aktiv ist).
+    return (
+      <AdaptiveLogo
+        light="/brand/cff-main-dark.png"
+        dark="/brand/cff-main-white.svg"
+        alt="Campus for Finance"
+        activeCi={activeCi}
+        heightClassName="h-3.5 w-auto"
+      />
+    );
+  }
+  if (id === 'sensability') {
+    // Nur eine Bildmarke (kein Schriftzug) vorhanden, deshalb Icon + eigenes Text-Label statt
+    // eines einzigen Logo-Bilds — Textfarbe folgt var(--color-text), das bereits korrekt auf die
+    // gerade sichtbare Kopfzeilenfläche abgestimmt ist (auch im CFF-fest-dunkel-Fall).
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <AdaptiveLogo
+          light="/brand/sensability-mark.png"
+          dark="/brand/sensability-mark-white.png"
+          alt=""
+          activeCi={activeCi}
+          heightClassName="h-5 w-auto"
+        />
+        <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+          Sensability
+        </span>
+      </span>
+    );
+  }
+  // CSCM WHU: einzelnes Icon+Wortmarke-Lockup wie bei WHU Event, kein Chip nötig.
   return (
-    <AdaptiveLogo
-      light="/brand/cff-main-dark.png"
-      dark="/brand/cff-main-white.svg"
-      alt="Campus for Finance"
-      activeCi={activeCi}
-      heightClassName="h-3.5 w-auto"
-    />
+    <AdaptiveLogo light="/brand/cscm-mark.png" dark="/brand/cscm-mark-white.png" alt="CSCM WHU" activeCi={activeCi} />
   );
 }
 
@@ -92,7 +119,9 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabId>('buehne');
   const [ci, setCi] = useState<CiId>(() => {
     const saved = localStorage.getItem(CI_STORAGE_KEY);
-    return saved === 'cff' || saved === 'whuevent' ? saved : 'forumwhu';
+    return saved === 'cff' || saved === 'whuevent' || saved === 'sensability' || saved === 'cscm'
+      ? saved
+      : 'forumwhu';
   });
 
   useEffect(() => {
