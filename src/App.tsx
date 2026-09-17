@@ -25,10 +25,17 @@ const CIS: Array<{ id: CiId; label: string }> = [
   { id: 'cscm', label: 'CSCM WHU' },
 ];
 
+/** CIs deren eigene Kopfzeilenfläche IMMER dunkel ist, unabhängig vom System-Light/Dark-Modus —
+ *  CFF (Guidelines' eigene feste Primary-Rendition) und Sensability (expliziter Wunsch, den
+ *  Hintergrund immer grün zu halten). Jedes Logo im Umschalter sitzt auf DERSELBEN Kopfzeile,
+ *  die von der jeweils AKTIVEN CI bestimmt wird — ist irgendeine hiervon aktiv, brauchen daher
+ *  ALLE Logos (nicht nur das eigene) ihre helle Variante, sonst verschwindet z.B. das dunkle
+ *  Sensability-Icon auf der jetzt dunkelgrünen Fläche, wenn Sensability selbst aktiv ist. */
+const ALWAYS_DARK_CIS = new Set<CiId>(['cff', 'sensability']);
+
 /** Wählt die passende Logo-Variante für die tatsächlich sichtbare Kopfzeilenfläche: die "helle"
- *  Variante folgt dem System-Light/Dark-Wechsel wie gewohnt — außer wenn CFF aktiv ist, dann ist
- *  die Fläche IMMER Deep Navy (CFF hat keinen eigenen System-Light/Dark-Wechsel, siehe CFF-CSS),
- *  deshalb wird dann zwangsweise die dunkle Variante gezeigt, unabhängig vom System-Modus. */
+ *  Variante folgt dem System-Light/Dark-Wechsel wie gewohnt — außer wenn eine der ALWAYS_DARK_CIS
+ *  aktiv ist, dann wird zwangsweise die dunkle Variante gezeigt, unabhängig vom System-Modus. */
 function AdaptiveLogo({
   light,
   dark,
@@ -42,7 +49,7 @@ function AdaptiveLogo({
   activeCi: CiId;
   heightClassName?: string;
 }) {
-  if (activeCi === 'cff') {
+  if (ALWAYS_DARK_CIS.has(activeCi)) {
     return <img src={dark} alt={alt} className={heightClassName} />;
   }
   return (

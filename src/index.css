@@ -115,35 +115,22 @@
 /*
  * Sensability CI — no brand-guidelines document exists for this one either, only a palette
  * image (Dark green #00392A, Lime green #1EB383, Orange #FC5000, Off-white #F5EEE5) plus the
- * "S" mark itself. Mapped by direct analogy to forumWHU's own documented pattern — a bright
- * signal color reserved for buttons/accents, a dark ink for text, a light neutral surface — since
- * the palette has the same shape (one light neutral + one dark ink + one bright accent), plus a
- * second bright green with no obvious separate role, used as-is for borders/dividers rather than
- * inventing a softer tint nothing in the source material supports. Adapts to system light/dark
- * like forumWHU, since nothing documents a fixed "always dark" look.
+ * "S" mark itself. Per explicit request: the background always stays dark green (single fixed
+ * look, like CFF — no system light/dark split), and the accent uses the off-white instead of the
+ * orange (orange is dropped from every role here). --color-railing intentionally keeps the lime
+ * green rather than following --color-accent: an off-white stroke would be nearly invisible
+ * against --color-panel-fill (#f8f5ee, a domain color shared by every CI), so railing keeps a
+ * color that's actually visible there instead of silently breaking that view.
  */
 :root[data-ci='sensability'] {
-  --color-bg: #f5eee5;
-  --color-surface: #f5eee5;
+  --color-bg: #00392a;
+  --color-surface: #00392a;
   --color-border: #1eb383;
-  --color-text: #00392a;
-  --color-text-muted: rgba(0, 57, 42, 0.65);
-  --color-accent: #fc5000;
+  --color-text: #f5eee5;
+  --color-text-muted: rgba(245, 238, 229, 0.65);
+  --color-accent: #f5eee5;
   --color-accent-contrast: #00392a;
-  --color-railing: #fc5000;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root[data-ci='sensability'] {
-    --color-bg: #00392a;
-    --color-surface: #00392a;
-    --color-border: #1eb383;
-    --color-text: #f5eee5;
-    --color-text-muted: rgba(245, 238, 229, 0.65);
-    --color-accent: #fc5000;
-    --color-accent-contrast: #00392a;
-    --color-railing: #fc5000;
-  }
+  --color-railing: #1eb383;
 }
 
 /*
