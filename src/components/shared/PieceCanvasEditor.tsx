@@ -32,8 +32,11 @@ interface Props {
   /** Erzwingt eine Mindest-viewBox-Breite — z.B. damit zwei Ebenen (Tresen: Unterbau +
    *  Thekenplatte) dieselbe Skala teilen, statt unabhängig auf den eigenen Inhalt zu skalieren. */
   minCanvasWidthM?: number;
-  /** Gestrichelter Referenz-Umriss einer anderen Fläche, links-/vorderkantenbündig (x=0,y=0). */
-  referenceFootprint?: { widthM: number; depthM: number; label?: string };
+  /** Gestrichelter Referenz-Umriss einer anderen Fläche, an ihrer tatsächlichen Position (x,y) —
+   *  NICHT pauschal an (0,0) verankert, sonst zeigt der Umriss eine Fläche, in der die echten
+   *  Platten gar nicht liegen, sobald diese Ebene versetzt statt vorderkantenbündig gebaut wurde
+   *  (siehe boundingBoxOf in customShape.ts). */
+  referenceFootprint?: { x: number; y: number; widthM: number; depthM: number; label?: string };
 }
 
 const PAD = 0.6;
@@ -208,11 +211,11 @@ export function PieceCanvasEditor({
 
   const contentWidthM = Math.max(
     pieces.reduce((m, p) => Math.max(m, p.x + p.w), 0),
-    referenceFootprint?.widthM ?? 0,
+    referenceFootprint ? referenceFootprint.x + referenceFootprint.widthM : 0,
   );
   const contentDepthM = Math.max(
     pieces.reduce((m, p) => Math.max(m, p.y + p.d), 0),
-    referenceFootprint?.depthM ?? 0,
+    referenceFootprint ? referenceFootprint.y + referenceFootprint.depthM : 0,
   );
   const canvasWidthM = Math.max(minCanvasWidthM ?? 0, MIN_CANVAS_WIDTH_M, contentWidthM + BUFFER_M);
   const canvasDepthM = Math.max(MIN_CANVAS_DEPTH_M, contentDepthM + BUFFER_M);
@@ -717,8 +720,8 @@ export function PieceCanvasEditor({
         {referenceFootprint && (
           <>
             <rect
-              x={0}
-              y={0}
+              x={referenceFootprint.x}
+              y={referenceFootprint.y}
               width={referenceFootprint.widthM}
               height={referenceFootprint.depthM}
               fill="none"
@@ -730,8 +733,11 @@ export function PieceCanvasEditor({
             />
             {referenceFootprint.label && (
               <text
-                x={referenceFootprint.widthM / 2}
-                y={Math.min(referenceFootprint.depthM, canvasDepthM) / 2}
+                x={referenceFootprint.x + referenceFootprint.widthM / 2}
+                y={
+                  referenceFootprint.y +
+                  Math.min(referenceFootprint.depthM, Math.max(0, canvasDepthM - referenceFootprint.y)) / 2
+                }
                 fontSize={0.2}
                 textAnchor="middle"
                 fill="var(--color-accent)"

@@ -11,6 +11,7 @@ import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { SummaryStats } from '../../components/shared/SummaryStats';
 import { WarningBanner } from '../../components/shared/WarningBanner';
 import {
+  boundingBoxOf,
   buildLayoutFromPieces,
   fillHorizontalSpan,
   makePieceId,
@@ -67,6 +68,12 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
 
   const baseLayout = useMemo(() => buildLayoutFromPieces(basePieces), [basePieces]);
   const topLayout = useMemo(() => buildLayoutFromPieces(topPieces), [topPieces]);
+
+  // Enges Begrenzungsrechteck statt layout.widthM/depthM (die immer vom Ursprung aus messen) —
+  // sonst zeigt der Referenz-Umriss der jeweils anderen Ebene eine Fläche, in der die echten
+  // Platten gar nicht liegen, sobald diese nicht vorderkantenbündig gebaut wurde.
+  const baseBoundingBox = useMemo(() => boundingBoxOf(baseLayout.panels), [baseLayout]);
+  const topBoundingBox = useMemo(() => boundingBoxOf(topLayout.panels), [topLayout]);
 
   // Gemeinsame Skala: ohne das würde jeder Canvas unabhängig auf seinen eigenen Inhalt
   // skalieren — eine tatsächlich schmalere Thekenplatte sähe dann trotzdem gleich breit wie
@@ -196,9 +203,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           onRotatePiece={baseRotatePiece}
           frontEdgeLabel="Unterbau-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
-          referenceFootprint={
-            topLayout.widthM > 0 ? { widthM: topLayout.widthM, depthM: topLayout.depthM, label: 'Thekenplatte' } : undefined
-          }
+          referenceFootprint={topBoundingBox ? { ...topBoundingBox, label: 'Thekenplatte' } : undefined}
         />
         <PlacedPiecesChips pieces={basePieces} onRemovePiece={baseRemovePiece} />
       </section>
@@ -246,9 +251,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           onRotatePiece={topRotatePiece}
           frontEdgeLabel="Thekenplatten-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
-          referenceFootprint={
-            baseLayout.widthM > 0 ? { widthM: baseLayout.widthM, depthM: baseLayout.depthM, label: 'Unterbau' } : undefined
-          }
+          referenceFootprint={baseBoundingBox ? { ...baseBoundingBox, label: 'Unterbau' } : undefined}
         />
         <PlacedPiecesChips pieces={topPieces} onRemovePiece={topRemovePiece} />
       </section>

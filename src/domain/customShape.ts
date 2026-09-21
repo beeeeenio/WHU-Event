@@ -228,6 +228,22 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
 }
 
 /**
+ * Enges Begrenzungsrechteck der tatsächlich belegten Fläche — anders als layout.widthM/depthM
+ * (die immer vom Ursprung (0,0) aus messen, siehe buildLayoutFromPieces) berücksichtigt das
+ * auch, wenn eine Ebene nicht bündig an der Vorderkante gebaut wurde. Für den Tresen-Referenz-
+ * Umriss der jeweils ANDEREN Ebene gedacht — sonst zeigt der Umriss eine Fläche, in der die
+ * echten Platten gar nicht liegen, sobald eine Ebene versetzt statt bündig gebaut wurde.
+ */
+export function boundingBoxOf(panels: PanelInstance[]): { x: number; y: number; widthM: number; depthM: number } | null {
+  if (panels.length === 0) return null;
+  const minX = Math.min(...panels.map((p) => p.x));
+  const minY = Math.min(...panels.map((p) => p.y));
+  const maxX = Math.max(...panels.map((p) => p.x + p.w));
+  const maxY = Math.max(...panels.map((p) => p.y + p.d));
+  return { x: round3(minX), y: round3(minY), widthM: round3(maxX - minX), depthM: round3(maxY - minY) };
+}
+
+/**
  * Zerlegt eine Spannweite in echte Katalogstücke (inkl. Sondermaß auf der Modulachse) — kennt
  * nur "eine Achse mit fester Tiefe", kein Reihen-/Richtungskonzept. Grundlage für die
  * horizontalen UND (transponiert) vertikalen Wrapper unten sowie für den Dreieck-Keil.
