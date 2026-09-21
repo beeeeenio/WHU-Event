@@ -1,7 +1,8 @@
 import type { RefObject } from 'react';
 import type { MaterialListItem } from '../../domain/types';
 import type { CiId } from '../../lib/ci';
-import { downloadTextFile, materialListToCsv } from '../../lib/csv';
+import { materialListToCsv } from '../../lib/csv';
+import { downloadTextFile } from '../../lib/download';
 import { exportCanvasAsPng } from '../../lib/canvasExport';
 import { exportLayoutAsPptx, exportSectionsAsPptx, type PptxSection } from '../../lib/pptxExport';
 
@@ -24,7 +25,7 @@ interface Props {
 export function ExportButtons({ materialList, canvasRef, filenamePrefix, pptx }: Props) {
   function handleCsvExport() {
     const csv = materialListToCsv(materialList);
-    downloadTextFile(`${filenamePrefix}-materialliste.csv`, csv);
+    downloadTextFile(`${filenamePrefix}-materialliste.csv`, csv, 'text/csv;charset=utf-8', true);
   }
 
   async function handlePngExport() {

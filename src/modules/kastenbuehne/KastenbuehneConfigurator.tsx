@@ -70,7 +70,9 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   }
 
   function applySavedState(data: KastenbuehneSavedState) {
-    setHeightCm(data.heightCm);
+    // Etwas strengere Prüfung als nur "ist eine Zahl" — beim Datei-Import (im Unterschied zum
+    // bisherigen localStorage-Laden) kann die Datei von außerhalb des Tools kommen.
+    if (STRUCTURE_RULES.buehne.heightOptionsCm.includes(data.heightCm)) setHeightCm(data.heightCm);
     setPieces(Array.isArray(data.pieces) ? data.pieces.filter(isValidPiece2D) : []);
   }
 

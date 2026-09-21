@@ -163,8 +163,10 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   }
 
   function applySavedState(data: TresenSavedState) {
-    setBaseHeightCm(data.baseHeightCm);
-    setSpindelHeightCm(data.spindelHeightCm);
+    // Etwas strengere Prüfung als nur "ist eine Zahl" — beim Datei-Import (im Unterschied zum
+    // bisherigen localStorage-Laden) kann die Datei von außerhalb des Tools kommen.
+    if (STRUCTURE_RULES.tresen.heightOptionsCm.includes(data.baseHeightCm)) setBaseHeightCm(data.baseHeightCm);
+    if (SPINDEL_HEIGHT_OPTIONS_CM.includes(data.spindelHeightCm)) setSpindelHeightCm(data.spindelHeightCm);
     setBasePieces(Array.isArray(data.basePieces) ? data.basePieces.filter(isValidPiece2D) : []);
     setTopPieces(Array.isArray(data.topPieces) ? data.topPieces.filter(isValidPiece2D) : []);
   }
