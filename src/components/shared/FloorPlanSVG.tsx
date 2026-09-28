@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { boundingBoxOf } from '../../domain/customShape';
 import type { LabeledFootPosition } from '../../domain/feet';
 import { footColorForHeight } from '../../domain/footColorScale';
@@ -42,6 +43,7 @@ export function FloorPlanSVG({
   showLabels = true,
   minWidthM,
 }: Props) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const { widthM, depthM, panels } = layout;
   const footColor = footColorForHeight(heightCm);
   const pad = 0.8;
@@ -57,15 +59,15 @@ export function FloorPlanSVG({
     <div className="space-y-1.5">
       <svg viewBox={viewBox} className="w-full h-auto max-h-[440px]" role="img" aria-label="Grundrissplan">
       <defs>
-        <pattern id="fps-hatch" width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <pattern id={`fps-hatch-${uid}`} width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
           <rect width={0.14} height={0.14} fill="var(--color-panel-fill)" />
           <line x1={0} y1={0} x2={0} y2={0.14} stroke="var(--color-panel-hatch)" strokeWidth={0.02} opacity={0.32} />
         </pattern>
-        <pattern id="fps-hatch-warning" width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <pattern id={`fps-hatch-warning-${uid}`} width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
           <rect width={0.14} height={0.14} fill="var(--color-panel-fill)" />
           <line x1={0} y1={0} x2={0} y2={0.14} stroke="var(--color-panel-hatch-warning)" strokeWidth={0.022} opacity={0.42} />
         </pattern>
-        <pattern id="fps-dotgrid" width={0.5} height={0.5} patternUnits="userSpaceOnUse">
+        <pattern id={`fps-dotgrid-${uid}`} width={0.5} height={0.5} patternUnits="userSpaceOnUse">
           <circle cx={0.25} cy={0.25} r={0.012} fill="var(--color-grid-line)" />
         </pattern>
       </defs>
@@ -76,7 +78,7 @@ export function FloorPlanSVG({
         height={depthM + pad * 2}
         fill="var(--color-surface)"
       />
-      <rect x={-pad} y={-pad} width={widthM + pad * 2} height={depthM + pad * 2} fill="url(#fps-dotgrid)" />
+      <rect x={-pad} y={-pad} width={widthM + pad * 2} height={depthM + pad * 2} fill={`url(#fps-dotgrid-${uid})`} />
       {Array.from({ length: Math.floor(widthM) + 1 }, (_, i) => (
         <line key={`vmaj-${i}`} x1={i} y1={0} x2={i} y2={depthM} stroke="var(--color-grid-line-major)" strokeWidth={0.01} />
       ))}
@@ -92,7 +94,7 @@ export function FloorPlanSVG({
                 points={trianglePoints(p, p.corner!)
                   .map((pt) => `${pt.x},${pt.y}`)
                   .join(' ')}
-                fill="url(#fps-hatch)"
+                fill={`url(#fps-hatch-${uid})`}
                 stroke="var(--color-panel-stroke)"
                 strokeWidth={0.03}
               />
@@ -102,7 +104,7 @@ export function FloorPlanSVG({
                 y={p.y}
                 width={p.w}
                 height={p.d}
-                fill={p.isSondermass ? 'url(#fps-hatch-warning)' : 'url(#fps-hatch)'}
+                fill={p.isSondermass ? `url(#fps-hatch-warning-${uid})` : `url(#fps-hatch-${uid})`}
                 stroke="var(--color-panel-stroke)"
                 strokeWidth={0.03}
               />

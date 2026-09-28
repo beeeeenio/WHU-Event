@@ -58,6 +58,15 @@ export function makePieceId(): string {
   return `piece-${idCounter}`;
 }
 
+/** Reserviert angegebene Stück-IDs für die Zukunft — wird beim Laden einer gespeicherten Konfiguration
+ *  aufgerufen, um sicherzustellen, dass neu erstellte Stücke keine bereits vorhandenen IDs erhalten. */
+export function reservePieceIds(ids: Iterable<string>): void {
+  for (const id of ids) {
+    const m = /^piece-(\d+)$/.exec(id);
+    if (m) idCounter = Math.max(idCounter, Number(m[1]));
+  }
+}
+
 /** Dreht ein Stück an Ort und Stelle — für ein Rechteck der bekannte Breite/Tiefe-Tausch
  *  (2 Zustände); für das Dreieckpodest ein Wechsel zur nächsten Ecke im Uhrzeigersinn
  *  (4 Zustände, siehe nextTriangleCorner) — die Bounding-Box bleibt dabei immer 1×1, ändert

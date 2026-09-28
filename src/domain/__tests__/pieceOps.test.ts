@@ -1,0 +1,126 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { addFilledPieces, movePieceTo, removePieceById, rotatePieceById } from '../pieceOps';
+import type { Piece2D } from '../customShape';
+
+describe('pieceOps', () => {
+  let piece1: Piece2D;
+  let piece2: Piece2D;
+  let pieces: Piece2D[];
+
+  beforeEach(() => {
+    piece1 = { id: 'p1', x: 0, y: 0, w: 2, d: 1 };
+    piece2 = { id: 'p2', x: 3, y: 2, w: 1, d: 2 };
+    pieces = [piece1, piece2];
+  });
+
+  describe('addFilledPieces', () => {
+    it('appends filled pieces with fresh IDs', () => {
+      const filled = [{ x: 5, y: 5, w: 1, d: 1 }];
+      const result = addFilledPieces(pieces, filled);
+      expect(result).toHaveLength(3);
+      expect(result[0]).toBe(piece1);
+      expect(result[1]).toBe(piece2);
+      expect(result[2]).toHaveProperty('id');
+      expect(result[2].x).toBe(5);
+      expect(result[2].y).toBe(5);
+    });
+
+    it('returns the same array reference if filled is empty', () => {
+      const result = addFilledPieces(pieces, []);
+      expect(result).toBe(pieces);
+    });
+
+    it('generates unique IDs for each filled piece', () => {
+      const filled = [
+        { x: 0, y: 0, w: 1, d: 1 },
+        { x: 1, y: 0, w: 1, d: 1 },
+      ];
+      const result = addFilledPieces(pieces, filled);
+      expect(result[2].id).not.toBe(result[3].id);
+    });
+  });
+
+  describe('removePieceById', () => {
+    it('removes a piece by ID', () => {
+      const result = removePieceById(pieces, 'p1');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBe(piece2);
+    });
+
+    it('returns the same array reference if ID not found', () => {
+      const result = removePieceById(pieces, 'nonexistent');
+      expect(result).toBe(pieces);
+    });
+
+    it('returns a new array when removing an existing piece', () => {
+      const result = removePieceById(pieces, 'p1');
+      expect(result).not.toBe(pieces);
+    });
+  });
+
+  describe('movePieceTo', () => {
+    it('moves a piece to a new position', () => {
+      const result = movePieceTo(pieces, 'p1', 10, 20);
+      expect(result).toHaveLength(2);
+      expect(result[0].x).toBe(10);
+      expect(result[0].y).toBe(20);
+      expect(result[1]).toBe(piece2);
+    });
+
+    it('returns the same array reference if ID not found', () => {
+      const result = movePieceTo(pieces, 'nonexistent', 10, 20);
+      expect(result).toBe(pieces);
+    });
+
+    it('returns a new array when moving an existing piece', () => {
+      const result = movePieceTo(pieces, 'p1', 10, 20);
+      expect(result).not.toBe(pieces);
+    });
+
+    it('does not mutate the original piece', () => {
+      const originalX = piece1.x;
+      movePieceTo(pieces, 'p1', 100, 200);
+      expect(piece1.x).toBe(originalX);
+    });
+  });
+
+  describe('rotatePieceById', () => {
+    it('rotates a rectangle piece (swaps w and d)', () => {
+      const result = rotatePieceById(pieces, 'p1');
+      expect(result).toHaveLength(2);
+      expect(result[0].w).toBe(1);
+      expect(result[0].d).toBe(2);
+      expect(result[1]).toBe(piece2);
+    });
+
+    it('returns the same array reference if ID not found', () => {
+      const result = rotatePieceById(pieces, 'nonexistent');
+      expect(result).toBe(pieces);
+    });
+
+    it('returns a new array when rotating an existing piece', () => {
+      const result = rotatePieceById(pieces, 'p1');
+      expect(result).not.toBe(pieces);
+    });
+
+    it('handles triangle pieces with corner property', () => {
+      const trianglePiece: Piece2D = { id: 'triangle', x: 0, y: 0, w: 1, d: 1, corner: 'tl' };
+      const pieces2 = [trianglePiece];
+      const result = rotatePieceById(pieces2, 'triangle');
+      expect(result[0].corner).not.toBe('tl');
+    });
+  });
+
+  describe('reference equality preservation', () => {
+    it('preserves array reference when operations are no-ops', () => {
+      const r1 = addFilledPieces(pieces, []);
+      const r2 = removePieceById(pieces, 'nonexistent');
+      const r3 = movePieceTo(pieces, 'nonexistent', 10, 20);
+      const r4 = rotatePieceById(pieces, 'nonexistent');
+      expect(r1).toBe(pieces);
+      expect(r2).toBe(pieces);
+      expect(r3).toBe(pieces);
+      expect(r4).toBe(pieces);
+    });
+  });
+});

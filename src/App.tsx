@@ -4,8 +4,8 @@ import { TresenConfigurator } from './modules/tresen/TresenConfigurator';
 import type { CiId } from './lib/ci';
 
 // Tisch/Tribüne (und die alte reglerbasierte Bühne) sind bewusst aus der App entfernt,
-// aber nicht gelöscht — die Dateien liegen weiter unter src/modules/{tisch,tribuene,buehne}/,
-// falls sie später wieder gebraucht werden.
+// aber nicht gelöscht — die Dateien liegen weiter unter _archive/modules/{tisch,tribuene,buehne}/
+// und kompilieren nicht mehr gegen die aktuelle API.
 type TabId = 'buehne' | 'tresen';
 
 const TABS: Array<{ id: TabId; label: string }> = [
@@ -172,12 +172,14 @@ function App() {
         </div>
       </header>
 
-      <nav className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <nav className="border-b border-[var(--color-border)] bg-[var(--color-surface)]" role="tablist">
         <div className="max-w-4xl mx-auto px-4 flex gap-1 overflow-x-auto">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
                 activeTab === tab.id
@@ -192,8 +194,12 @@ function App() {
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
-        {activeTab === 'buehne' && <KastenbuehneConfigurator ci={ci} />}
-        {activeTab === 'tresen' && <TresenConfigurator ci={ci} />}
+        <div hidden={activeTab !== 'buehne'}>
+          <KastenbuehneConfigurator ci={ci} />
+        </div>
+        <div hidden={activeTab !== 'tresen'}>
+          <TresenConfigurator ci={ci} />
+        </div>
       </main>
 
       <footer className="max-w-4xl mx-auto px-4 py-6 text-xs text-[var(--color-text-muted)]">

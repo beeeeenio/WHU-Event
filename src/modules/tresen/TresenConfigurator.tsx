@@ -6,27 +6,19 @@ import { FootColorLegend } from '../../components/shared/FootColorLegend';
 import { HeightSelector } from '../../components/shared/HeightSelector';
 import { MaterialListTable } from '../../components/shared/MaterialListTable';
 import { PieceCanvasEditor } from '../../components/shared/PieceCanvasEditor';
+import { PlanFileBar } from '../../components/shared/PlanFileBar';
 import { PlacedPiecesChips } from '../../components/shared/PlacedPiecesChips';
 import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { SummaryStats } from '../../components/shared/SummaryStats';
 import { WarningBanner } from '../../components/shared/WarningBanner';
-import {
-  boundingBoxOf,
-  buildLayoutFromPieces,
-  fillHorizontalSpan,
-  makePieceId,
-  rotatePieceInPlace,
-  shiftPieces,
-  type FilledPiece,
-  type Piece2D,
-} from '../../domain/customShape';
+import { boundingBoxOf, buildLayoutFromPieces, fillHorizontalSpan, makePieceId } from '../../domain/customShape';
 import { buildMaterialList, mergeMaterialLists } from '../../domain/materialList';
 import { isBracingRequired, STRUCTURE_RULES } from '../../domain/rules';
-import type { TriangleCorner } from '../../domain/types';
+import { SPINDEL_HEIGHT_OPTIONS_CM } from '../../domain/tresen';
+import { parseTresenFile } from '../../domain/savedState';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import { usePieceLayer } from '../../hooks/usePieceLayer';
 import type { CiId } from '../../lib/ci';
-
-const SPINDEL_HEIGHT_OPTIONS_CM = [10, 20, 30, 40];
 
 // Kein Schnellstart-Regler: jede Ebene wächst ausschließlich mit dem, was tatsächlich
 // gebaut wurde — Mindestbreite, damit ein leerer Plan nicht winzig wirkt, plus Puffer. Beide
@@ -35,26 +27,6 @@ const SPINDEL_HEIGHT_OPTIONS_CM = [10, 20, 30, 40];
 const MIN_CANVAS_WIDTH_M = 6;
 const CANVAS_BUFFER_M = 2;
 
-interface TresenSavedState {
-  baseHeightCm: number;
-  spindelHeightCm: number;
-  basePieces: Piece2D[];
-  topPieces: Piece2D[];
-}
-
-const VALID_CORNERS: readonly TriangleCorner[] = ['tl', 'tr', 'bl', 'br'];
-
-function isValidPiece2D(p: unknown): p is Piece2D {
-  const v = p as Piece2D | null | undefined;
-  return (
-    typeof v?.id === 'string' &&
-    typeof v?.x === 'number' &&
-    typeof v?.y === 'number' &&
-    typeof v?.w === 'number' &&
-    typeof v?.d === 'number' &&
-    (v?.corner === undefined || VALID_CORNERS.includes(v.corner))
-  );
-}
 
 type ResultTab = 'kennzahlen' | 'grundriss' | '3d' | 'material';
 
@@ -64,11 +36,11 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [basePieces, setBasePieces] = useState<Piece2D[]>([]);
-  const [topPieces, setTopPieces] = useState<Piece2D[]>([]);
+  const base = usePieceLayer();
+  const top = usePieceLayer();
 
-  const baseLayout = useMemo(() => buildLayoutFromPieces(basePieces), [basePieces]);
-  const topLayout = useMemo(() => buildLayoutFromPieces(topPieces), [topPieces]);
+  const baseLayout = useMemo(() => buildLayoutFromPieces(base.pieces), [base.pieces]);
+  const topLayout = useMemo(() => buildLayoutFromPieces(top.pieces), [top.pieces]);
 
   // Enges Begrenzungsrechteck statt layout.widthM/depthM (die immer vom Ursprung aus messen) —
   // sonst zeigt der Referenz-Umriss der jeweils anderen Ebene eine Fläche, in der die echten
@@ -118,39 +90,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
     [baseMaterialList, topMaterialList],
   );
 
-  const hasContent = basePieces.length > 0 || topPieces.length > 0;
-
-  function baseAddPieces(newPieces: FilledPiece[]) {
-    setBasePieces((prev) => [...prev, ...newPieces.map((p) => ({ ...p, id: makePieceId() }))]);
-  }
-  function baseRemovePiece(id: string) {
-    setBasePieces((prev) => prev.filter((p) => p.id !== id));
-  }
-  function baseMovePiece(id: string, x: number, y: number) {
-    setBasePieces((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)));
-  }
-  function baseRotatePiece(id: string) {
-    setBasePieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
-  }
-  function baseShiftAll(dx: number) {
-    setBasePieces((prev) => shiftPieces(prev, dx) ?? prev);
-  }
-
-  function topAddPieces(newPieces: FilledPiece[]) {
-    setTopPieces((prev) => [...prev, ...newPieces.map((p) => ({ ...p, id: makePieceId() }))]);
-  }
-  function topRemovePiece(id: string) {
-    setTopPieces((prev) => prev.filter((p) => p.id !== id));
-  }
-  function topMovePiece(id: string, x: number, y: number) {
-    setTopPieces((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)));
-  }
-  function topRotatePiece(id: string) {
-    setTopPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
-  }
-  function topShiftAll(dx: number) {
-    setTopPieces((prev) => shiftPieces(prev, dx) ?? prev);
-  }
+  const hasContent = base.pieces.length > 0 || top.pieces.length > 0;
 
   // Setzt die Thekenplatte auf dieselbe Breite wie der aktuelle Unterbau, bei halber Tiefe —
   // ersetzt den bisherigen Inhalt der Ebene komplett (kein Zusammenführen), da das eine bewusste
@@ -168,19 +108,22 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
     if (!baseBoundingBox) return;
     const targetDepthM = Math.max(0.5, Math.round(baseBoundingBox.depthM / 2 / 0.5) * 0.5);
     const filled = fillHorizontalSpan(baseBoundingBox.widthM, targetDepthM, baseBoundingBox.x, baseBoundingBox.y);
-    setTopPieces(filled.map((p) => ({ ...p, id: makePieceId() })));
+    top.replace(filled.map((p) => ({ ...p, id: makePieceId() })));
   }
 
-  function applySavedState(data: TresenSavedState) {
-    // Etwas strengere Prüfung als nur "ist eine Zahl" — beim Datei-Import (im Unterschied zum
-    // bisherigen localStorage-Laden) kann die Datei von außerhalb des Tools kommen.
-    if (STRUCTURE_RULES.tresen.heightOptionsCm.includes(data.baseHeightCm)) setBaseHeightCm(data.baseHeightCm);
-    if (SPINDEL_HEIGHT_OPTIONS_CM.includes(data.spindelHeightCm)) setSpindelHeightCm(data.spindelHeightCm);
-    setBasePieces(Array.isArray(data.basePieces) ? data.basePieces.filter(isValidPiece2D) : []);
-    setTopPieces(Array.isArray(data.topPieces) ? data.topPieces.filter(isValidPiece2D) : []);
+  function applySavedState(data: unknown): string | null {
+    const result = parseTresenFile(data);
+    if (!result.ok) {
+      return result.error;
+    }
+    if (result.value.baseHeightCm !== undefined) setBaseHeightCm(result.value.baseHeightCm);
+    if (result.value.spindelHeightCm !== undefined) setSpindelHeightCm(result.value.spindelHeightCm);
+    base.replace(result.value.basePieces);
+    top.replace(result.value.topPieces);
+    return null;
   }
 
-  const currentSavedState: TresenSavedState = { baseHeightCm, spindelHeightCm, basePieces, topPieces };
+  const currentSavedState = { baseHeightCm, spindelHeightCm, basePieces: base.pieces, topPieces: top.pieces };
 
   // Beide Ebenen bilden vorne (y=0, siehe Vorderkanten-Beschriftung in PieceCanvasEditor) eine
   // bündige Kante — links-/vorderkantenbündig, kein Versatz zwischen den Ebenen.
@@ -190,12 +133,14 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">Aufbau</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-[var(--color-text)]">Aufbau</h2>
+          <PlanFileBar namespace="tresen" currentData={currentSavedState} onLoad={applySavedState} />
+        </div>
         <p className="text-sm text-[var(--color-text-muted)]">
           Zweistöckige Konstruktion: unten ein normales Systempodest auf LV-Füßen, darauf Verstellspindelfüße,
           darauf eine zweite Podestplatte als Thekenabschluss. Kein Regler, keine vorgefertigte Fläche — beide
-          Ebenen sind eigene, leere Pläne: ziehe Stücke, den Dreieck-Keil oder das Freizeichnen-Werkzeug direkt
-          drauf.
+          Ebenen sind eigene, leere Pläne: ziehe Stücke oder das Freizeichnen-Werkzeug direkt drauf.
         </p>
       </section>
 
@@ -207,17 +152,12 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
         </div>
         {bracingRequired && <WarningBanner>Ab 80 cm Unterbauhöhe ist eine Diagonalverstrebung erforderlich.</WarningBanner>}
         <PieceCanvasEditor
-          pieces={basePieces}
-          onAddPieces={baseAddPieces}
-          onRemovePiece={baseRemovePiece}
-          onMovePiece={baseMovePiece}
-          onRotatePiece={baseRotatePiece}
-          onShiftAll={baseShiftAll}
+          {...base.editorProps}
           frontEdgeLabel="Unterbau-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={topBoundingBox ? { ...topBoundingBox, label: 'Thekenplatte' } : undefined}
         />
-        <PlacedPiecesChips pieces={basePieces} onRemovePiece={baseRemovePiece} />
+        <PlacedPiecesChips pieces={base.pieces} onRemovePiece={base.editorProps.onRemovePiece} />
       </section>
 
       <section className="space-y-3">
@@ -256,17 +196,12 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           </p>
         </div>
         <PieceCanvasEditor
-          pieces={topPieces}
-          onAddPieces={topAddPieces}
-          onRemovePiece={topRemovePiece}
-          onMovePiece={topMovePiece}
-          onRotatePiece={topRotatePiece}
-          onShiftAll={topShiftAll}
+          {...top.editorProps}
           frontEdgeLabel="Thekenplatten-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={baseBoundingBox ? { ...baseBoundingBox, label: 'Unterbau' } : undefined}
         />
-        <PlacedPiecesChips pieces={topPieces} onRemovePiece={topRemovePiece} />
+        <PlacedPiecesChips pieces={top.pieces} onRemovePiece={top.editorProps.onRemovePiece} />
       </section>
 
       {hasContent && (
@@ -375,7 +310,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
       )}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">Gespeicherte Konfigurationen</h2>
+        <h2 className="text-lg font-semibold text-[var(--color-text)]">Im Browser gespeichert</h2>
         <SavedConfigsPanel namespace="tresen" currentData={currentSavedState} onLoad={applySavedState} />
       </section>
     </div>

@@ -1,47 +1,26 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSavedConfigs } from '../../hooks/useSavedConfigs';
-import { downloadTextFile } from '../../lib/download';
 
 interface Props<T> {
   /** Eindeutiger Namensraum je Modul, z.B. "buehne", "tresen". */
   namespace: string;
   /** Aktueller Zustand des Moduls, als reines JSON-Objekt — wird 1:1 gespeichert. */
   currentData: T;
-  /** Setzt den Modul-Zustand aus einer geladenen Konfiguration zurück. */
-  onLoad: (data: T) => void;
+  /** Setzt den Modul-Zustand aus einer geladenen Konfiguration zurück.
+   *  Gibt null zurück bei Erfolg, oder eine Fehlermeldung bei ungültigen Daten. */
+  onLoad: (data: unknown) => string | null;
 }
 
 export function SavedConfigsPanel<T>({ namespace, currentData, onLoad }: Props<T>) {
   const { configs, save, remove } = useSavedConfigs<T>(namespace);
   const [name, setName] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) return;
     save(trimmed, currentData);
     setName('');
-  }
-
-  function handleExportFile() {
-    downloadTextFile(`nivtec-${namespace}.json`, JSON.stringify(currentData, null, 2), 'application/json;charset=utf-8');
-  }
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // dieselbe Datei muss sich später erneut auswählen lassen
-    if (!file) return;
-    try {
-      const parsed: unknown = JSON.parse(await file.text());
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('not an object');
-      }
-      onLoad(parsed as T);
-      setImportError(null);
-    } catch {
-      setImportError('Datei konnte nicht gelesen werden — ist es eine gültige NivTec-JSON-Datei?');
-    }
   }
 
   return (
@@ -65,27 +44,7 @@ export function SavedConfigsPanel<T>({ namespace, currentData, onLoad }: Props<T
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={handleExportFile}
-          className="px-3 py-1.5 rounded-md text-sm border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-        >
-          Als Datei exportieren
-        </button>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="px-3 py-1.5 rounded-md text-sm border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-        >
-          Aus Datei importieren
-        </button>
-        <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleFileChange} className="hidden" />
-        <span className="text-xs text-[var(--color-text-muted)]">
-          Für den Austausch mit anderen Tools, z.B. einer übergeordneten Hallenplanung.
-        </span>
-      </div>
-      {importError && <p className="text-xs text-[var(--color-danger)]">{importError}</p>}
+      {loadError && <p className="text-xs text-[var(--color-danger)]">{loadError}</p>}
 
       {configs.length === 0 ? (
         <p className="text-xs text-[var(--color-text-muted)]">Noch keine gespeicherten Konfigurationen.</p>
@@ -105,7 +64,7 @@ export function SavedConfigsPanel<T>({ namespace, currentData, onLoad }: Props<T
               <div className="flex gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => onLoad(c.data)}
+                  onClick={() => setLoadError(onLoad(c.data))}
                   className="px-2.5 py-1 rounded-md text-xs border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-contrast)]"
                 >
                   Laden

@@ -6,116 +6,67 @@ import { FootColorLegend } from '../../components/shared/FootColorLegend';
 import { HeightSelector } from '../../components/shared/HeightSelector';
 import { MaterialListTable } from '../../components/shared/MaterialListTable';
 import { PieceCanvasEditor } from '../../components/shared/PieceCanvasEditor';
+import { PlanFileBar } from '../../components/shared/PlanFileBar';
 import { PlacedPiecesChips } from '../../components/shared/PlacedPiecesChips';
 import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { StairsRampCalculator } from '../../components/shared/StairsRampCalculator';
 import { SummaryStats } from '../../components/shared/SummaryStats';
 import { WarningBanner } from '../../components/shared/WarningBanner';
-import {
-  buildLayoutFromPieces,
-  makePieceId,
-  normalizeToOrigin,
-  rotatePieceInPlace,
-  shiftPieces,
-  type FilledPiece,
-  type Piece2D,
-} from '../../domain/customShape';
+import { buildLayoutFromPieces, normalizeToOrigin } from '../../domain/customShape';
 import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
-import type { TriangleCorner } from '../../domain/types';
+import { parseKastenbuehneFile } from '../../domain/savedState';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import { usePieceLayer } from '../../hooks/usePieceLayer';
 import type { CiId } from '../../lib/ci';
-
-interface KastenbuehneSavedState {
-  heightCm: number;
-  pieces: Piece2D[];
-}
-
-const VALID_CORNERS: readonly TriangleCorner[] = ['tl', 'tr', 'bl', 'br'];
-
-function isValidPiece2D(p: unknown): p is Piece2D {
-  const v = p as Piece2D | null | undefined;
-  return (
-    typeof v?.id === 'string' &&
-    typeof v?.x === 'number' &&
-    typeof v?.y === 'number' &&
-    typeof v?.w === 'number' &&
-    typeof v?.d === 'number' &&
-    (v?.corner === undefined || VALID_CORNERS.includes(v.corner))
-  );
-}
 
 type ResultTab = 'kennzahlen' | 'grundriss' | '3d' | 'material';
 
 export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
-  const [pieces, setPieces] = useState<Piece2D[]>([]);
   const [heightCm, setHeightCm] = useState(STRUCTURE_RULES.buehne.heightOptionsCm[0]);
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const layer = usePieceLayer();
+
   // Alles Abgeleitete (Kennzahlen, Grundriss, 3D, PPTX, Materialliste) sieht die Bühne an (0,0) —
   // wo sie auf der Zeichenfläche liegt ("Alles verschieben"), soll dort nichts verändern. Der
   // Editor selbst bekommt weiter die echten Positionen.
-  const layout = useMemo(() => buildLayoutFromPieces(normalizeToOrigin(pieces)), [pieces]);
+  const layout = useMemo(() => buildLayoutFromPieces(normalizeToOrigin(layer.pieces)), [layer.pieces]);
 
   // Kastenbühne ist regeltechnisch eine ganz normale Bühne (gleiche Höhenserie,
   // Verstrebungs-/Geländerschwellen) — nur der Bauweg dahin ist ein anderer.
   const { totalFeet, labeledFeet, materialList } = useDerivedGeometry(layout, 'buehne', heightCm, []);
   const railingRequired = isRailingRequired('buehne', heightCm);
 
-  const hasContent = pieces.length > 0;
+  const hasContent = layer.pieces.length > 0;
 
-  function addPieces(newPieces: FilledPiece[]) {
-    setPieces((prev) => [...prev, ...newPieces.map((p) => ({ ...p, id: makePieceId() }))]);
+  function applySavedState(data: unknown): string | null {
+    const result = parseKastenbuehneFile(data);
+    if (!result.ok) {
+      return result.error;
+    }
+    if (result.value.heightCm !== undefined) setHeightCm(result.value.heightCm);
+    layer.replace(result.value.pieces);
+    return null;
   }
 
-  function removePiece(id: string) {
-    setPieces((prev) => prev.filter((p) => p.id !== id));
-  }
-
-  function movePiece(id: string, x: number, y: number) {
-    setPieces((prev) => prev.map((p) => (p.id === id ? { ...p, x, y } : p)));
-  }
-
-  function rotatePiece(id: string) {
-    setPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
-  }
-
-  function shiftAll(dx: number) {
-    setPieces((prev) => shiftPieces(prev, dx) ?? prev);
-  }
-
-  function applySavedState(data: KastenbuehneSavedState) {
-    // Etwas strengere Prüfung als nur "ist eine Zahl" — beim Datei-Import (im Unterschied zum
-    // bisherigen localStorage-Laden) kann die Datei von außerhalb des Tools kommen.
-    if (STRUCTURE_RULES.buehne.heightOptionsCm.includes(data.heightCm)) setHeightCm(data.heightCm);
-    setPieces(Array.isArray(data.pieces) ? data.pieces.filter(isValidPiece2D) : []);
-  }
-
-  const currentSavedState: KastenbuehneSavedState = { heightCm, pieces };
+  const currentSavedState = { heightCm, pieces: layer.pieces };
 
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">Kastenbühne</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-[var(--color-text)]">Kastenbühne</h2>
+          <PlanFileBar namespace="kastenbuehne" currentData={currentSavedState} onLoad={applySavedState} />
+        </div>
         <p className="text-sm text-[var(--color-text-muted)]">
-          Kein Regler, keine vorgefertigte Fläche — ziehe Stücke, den Dreieck-Keil oder das Freizeichnen-Werkzeug
-          direkt auf einen leeren Plan. Alles entsteht ausschließlich durch das, was du selbst platzierst.
+          Kein Regler, keine vorgefertigte Fläche — ziehe Stücke oder das Freizeichnen-Werkzeug direkt auf einen
+          leeren Plan. Alles entsteht ausschließlich durch das, was du selbst platzierst.
         </p>
       </section>
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">Aufbau per Drag & Drop</h2>
-          {hasContent && (
-            <button
-              type="button"
-              onClick={() => setPieces([])}
-              className="px-3 py-1.5 rounded-md text-sm border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-            >
-              Zurücksetzen
-            </button>
-          )}
-        </div>
+        <h2 className="text-lg font-semibold text-[var(--color-text)]">Aufbau per Drag & Drop</h2>
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Höhe</span>
           <HeightSelector heightOptionsCm={STRUCTURE_RULES.buehne.heightOptionsCm} valueCm={heightCm} onChange={setHeightCm} />
@@ -124,15 +75,10 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           </span>
         </div>
         <PieceCanvasEditor
-          pieces={pieces}
-          onAddPieces={addPieces}
-          onRemovePiece={removePiece}
-          onMovePiece={movePiece}
-          onRotatePiece={rotatePiece}
-          onShiftAll={shiftAll}
+          {...layer.editorProps}
           frontEdgeLabel="Vorderkante"
         />
-        <PlacedPiecesChips pieces={pieces} onRemovePiece={removePiece} />
+        <PlacedPiecesChips pieces={layer.pieces} onRemovePiece={layer.editorProps.onRemovePiece} />
       </section>
 
       <section className="space-y-3">
@@ -217,7 +163,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
       )}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">Gespeicherte Konfigurationen</h2>
+        <h2 className="text-lg font-semibold text-[var(--color-text)]">Im Browser gespeichert</h2>
         <SavedConfigsPanel namespace="kastenbuehne" currentData={currentSavedState} onLoad={applySavedState} />
       </section>
     </div>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   catalogPieceOptions,
   fillHorizontalSpan,
@@ -18,7 +18,6 @@ import type { TriangleCorner } from '../../domain/types';
 
 type ToolPayload =
   | { kind: 'piece'; w: number; d: number }
-  | { kind: 'wedge' }
   | { kind: 'draw' }
   | { kind: 'triangle'; corner: TriangleCorner };
 
@@ -31,6 +30,13 @@ interface Props {
   /** Verschiebt alle Stücke dieses Plans gemeinsam waagerecht um dx Meter ("Alles verschieben").
    *  Wird nur aufgerufen, wenn dabei nichts links über x=0 hinausrutscht (siehe shiftPieces). */
   onShiftAll: (dx: number) => void;
+  /** Rückgängig/Wiederholen für diesen Plan — optional, damit die Komponente ohne Verlauf nutzbar bleibt. */
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  /** Leert den ganzen Plan (ersetzt den bisherigen "Zurücksetzen"-Knopf im jeweiligen Modul). */
+  onClear?: () => void;
   /** Beschriftung über der Kante, an der y=0 liegt (z.B. "Bühnenvorderkante"). */
   frontEdgeLabel?: string;
   /** Erzwingt eine Mindest-viewBox-Breite — z.B. damit zwei Ebenen (Tresen: Unterbau +
@@ -178,18 +184,19 @@ export function PieceCanvasEditor({
   onMovePiece,
   onRotatePiece,
   onShiftAll,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onClear,
   frontEdgeLabel = 'Vorderkante',
   minCanvasWidthM,
   referenceFootprint,
 }: Props) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const svgRef = useRef<SVGSVGElement>(null);
   const [armed, setArmedState] = useState<ToolPayload | null>(null);
   const [pieceThicknessM, setPieceThicknessM] = useState<1 | 2>(1);
-  // Einstellbare Keil-Größe statt fest 3 m Basisbreite / 3 Reihen — Benni fand den festen Keil
-  // "nicht gut". Grenzen sind großzügig, aber nicht grenzenlos (0,5-m-Raster, min. 2 Reihen für
-  // eine sichtbare Verjüngung).
-  const [wedgeBaseWidthM, setWedgeBaseWidthM] = useState(3);
-  const [wedgeRowCount, setWedgeRowCount] = useState(3);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
   const [tracing, setTracing] = useState<TracingState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -269,8 +276,8 @@ export function PieceCanvasEditor({
 
   /** Baut einen Keil in EXAKT der Richtung, in die tatsächlich gezogen wurde (oben/unten/links/
    *  rechts) — Basisbreite am Start-Punkt, Spitze Richtung `current`. Nutzt dieselbe
-   *  `wedgePiecesAt`-Geometrie wie der Keil-Button (lokal, "nach unten wachsend" erzeugt) und
-   *  transformiert das Ergebnis passend, statt die Verjüngungs-Mathematik zweimal zu bauen. */
+   *  `wedgePiecesAt`-Geometrie (lokal, "nach unten wachsend" erzeugt) und transformiert das
+   *  Ergebnis passend, statt die Verjüngungs-Mathematik zweimal zu bauen. */
   function taperPiecesForDrag(
     start: { x: number; y: number },
     current: { x: number; y: number },
@@ -314,6 +321,20 @@ export function PieceCanvasEditor({
     });
   }
 
+  /** Verschiebt eine Charge nur so weit nach rechts/unten, dass kein Stück mehr bei x<0 oder
+   *  y<0 liegt — die Form/Reihenfolge bleibt exakt gleich, nur der Anker rutscht. Ohne das kann
+   *  ein schräger Zeichnen-Zug (Keil) über den linken/oberen Rand hinaus platziert werden, siehe
+   *  Bug-Report: teils unsichtbare Stücke, die auch "Alles verschieben ←" blockieren. */
+  function clampBatchToCanvas(filled: FilledPiece[]): FilledPiece[] {
+    if (filled.length === 0) return filled;
+    const minX = Math.min(...filled.map((p) => p.x));
+    const minY = Math.min(...filled.map((p) => p.y));
+    const dx = minX < 0 ? -minX : 0;
+    const dy = minY < 0 ? -minY : 0;
+    if (dx === 0 && dy === 0) return filled;
+    return filled.map((p) => ({ ...p, x: round3(p.x + dx), y: round3(p.y + dy) }));
+  }
+
   function drawFillFor(start: { x: number; y: number }, current: { x: number; y: number }, thickness: number): FilledPiece[] {
     const dx = current.x - start.x;
     const dy = current.y - start.y;
@@ -328,7 +349,7 @@ export function PieceCanvasEditor({
     }
     const drag = classifyDrag(start, current, thickness);
     if (drag.mode === 'taper') {
-      return taperPiecesForDrag(start, current, drag.baseWidthM, drag.rowCount, thickness);
+      return clampBatchToCanvas(taperPiecesForDrag(start, current, drag.baseWidthM, drag.rowCount, thickness));
     }
     if (horizontal) {
       const minX = Math.max(0, Math.min(start.x, current.x));
@@ -348,16 +369,9 @@ export function PieceCanvasEditor({
       const pos = findFreePosition(pieces, payload.w, payload.d, pointerPos.x - payload.w / 2, pointerPos.y - payload.d / 2);
       return [{ x: pos.x, y: pos.y, w: payload.w, d: payload.d }];
     }
-    if (payload.kind === 'triangle') {
-      const s = TRIANGLE_PANEL_SIZE_M;
-      const pos = findFreePosition(pieces, s, s, pointerPos.x - s / 2, pointerPos.y - s / 2);
-      return [{ x: pos.x, y: pos.y, w: s, d: s, corner: payload.corner }];
-    }
-    const template = { baseWidthM: wedgeBaseWidthM, rowCount: wedgeRowCount, pieceDepthM: pieceThicknessM };
-    const anchorX = pointerPos.x - template.baseWidthM / 2;
-    const anchorY = Math.max(0, pointerPos.y);
-    const filled = wedgePiecesAt(template, anchorX, anchorY);
-    return fitsAllAt(pieces, filled) ? filled : null;
+    const s = TRIANGLE_PANEL_SIZE_M;
+    const pos = findFreePosition(pieces, s, s, pointerPos.x - s / 2, pointerPos.y - s / 2);
+    return [{ x: pos.x, y: pos.y, w: s, d: s, corner: payload.corner }];
   }
 
   // arm(null) beim Start eines Paletten-Ziehens sorgt dafür, dass armed/paletteDrag nie
@@ -374,18 +388,10 @@ export function PieceCanvasEditor({
     if (payload.kind === 'piece') {
       const target = findFreePosition(pieces, payload.w, payload.d, pos.x - payload.w / 2, pos.y - payload.d / 2);
       onAddPieces([{ x: target.x, y: target.y, w: payload.w, d: payload.d }]);
-    } else if (payload.kind === 'triangle') {
+    } else {
       const s = TRIANGLE_PANEL_SIZE_M;
       const target = findFreePosition(pieces, s, s, pos.x - s / 2, pos.y - s / 2);
       onAddPieces([{ x: target.x, y: target.y, w: s, d: s, corner: payload.corner }]);
-    } else {
-      const template = { baseWidthM: wedgeBaseWidthM, rowCount: wedgeRowCount, pieceDepthM: pieceThicknessM };
-      const filled = wedgePiecesAt(template, pos.x - template.baseWidthM / 2, Math.max(0, pos.y));
-      if (fitsAllAt(pieces, filled)) {
-        onAddPieces(filled);
-      } else {
-        showBlockedMessage('Hier ist kein Platz für den Dreieck-Keil (braucht Platz für 3 Reihen ab hier).');
-      }
     }
   }
 
@@ -424,8 +430,8 @@ export function PieceCanvasEditor({
 
   // Drehen, während ein Stück noch aus der Palette gezogen wird (vor dem Loslassen) — der
   // Button behält seinen Fokus über die ganze Zieh-Geste (Pointer-Capture ändert daran nichts),
-  // daher reicht ein normaler onKeyDown hier. Nur für 'piece'/'triangle' relevant — Dreieck-Keil
-  // und Zeichnen kennen kein Drehen (siehe rotateSelected/das bestehende Arm-Drehen).
+  // daher reicht ein normaler onKeyDown hier. Nur für 'piece'/'triangle' relevant — Zeichnen
+  // kennt kein Drehen (siehe rotateSelected/das bestehende Arm-Drehen).
   function handlePaletteButtonKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
     if (e.key.toLowerCase() !== 'r' || !paletteDrag) return;
     e.preventDefault();
@@ -526,7 +532,7 @@ export function PieceCanvasEditor({
   // zu verschieben) oder — bei bewaffnetem Werkzeug — einen Tastatur-Cursor (dieselbe pointerPos,
   // die auch die Maus-Vorschau treibt), Enter/Leertaste platziert dort. R dreht, Entf/Rücktaste
   // entfernt, Esc bricht ab. 1–5 wählen die Plattengrößen in derselben Reihenfolge wie die
-  // Segmented-Control, T/K bewaffnen Dreieckpodest/Dreieck-Keil. Zeichnen bleibt bewusst
+  // Segmented-Control, T bewaffnet das Dreieckpodest. Zeichnen bleibt bewusst
   // maus-only (siehe Analyse zum Paletten-Ziehen) — sein Zug-Gestus lässt sich nicht sinnvoll in
   // diskrete Tastendrücke übersetzen.
   function handleCanvasKeyDown(e: React.KeyboardEvent<SVGSVGElement>) {
@@ -534,6 +540,18 @@ export function PieceCanvasEditor({
       arm(null);
       return;
     }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) onRedo?.();
+      else onUndo?.();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      onRedo?.();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPiece) {
       e.preventDefault();
       removeSelected();
@@ -595,19 +613,13 @@ export function PieceCanvasEditor({
       e.preventDefault();
       const payload: ToolPayload = { kind: 'triangle', corner: 'tl' };
       arm(armed?.kind === 'triangle' ? null : payload);
-      return;
-    }
-    if (e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      const payload: ToolPayload = { kind: 'wedge' };
-      arm(armed?.kind === 'wedge' ? null : payload);
     }
   }
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--color-text-muted)]">
-        Ziehe ein Stück, den Dreieck-Keil oder Zeichnen direkt aus der Leiste unten auf den Plan — oder klicke es
+        Ziehe ein Stück oder Zeichnen direkt aus der Leiste unten auf den Plan — oder klicke es
         erst an und dann auf die gewünschte Stelle (bei Zeichnen: klicke und ziehe auf dem Plan). Ein vorhandenes
         Stück kannst du direkt ziehen, um es zu verschieben, oder anklicken, um es zu drehen oder zu entfernen. Nach
         einem Klick auf den Plan geht es auch per Tastatur (Kurzbefehle unten).
@@ -671,15 +683,15 @@ export function PieceCanvasEditor({
         onKeyDown={handleCanvasKeyDown}
       >
         <defs>
-          <pattern id="pce-hatch" width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <pattern id={`pce-hatch-${uid}`} width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
             <rect width={0.14} height={0.14} fill="var(--color-panel-fill)" />
             <line x1={0} y1={0} x2={0} y2={0.14} stroke="var(--color-panel-hatch)" strokeWidth={0.02} opacity={0.32} />
           </pattern>
-          <pattern id="pce-hatch-warning" width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <pattern id={`pce-hatch-warning-${uid}`} width={0.14} height={0.14} patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
             <rect width={0.14} height={0.14} fill="var(--color-panel-fill)" />
             <line x1={0} y1={0} x2={0} y2={0.14} stroke="var(--color-panel-hatch-warning)" strokeWidth={0.022} opacity={0.42} />
           </pattern>
-          <pattern id="pce-dotgrid" width={GRID_STEP_M} height={GRID_STEP_M} patternUnits="userSpaceOnUse">
+          <pattern id={`pce-dotgrid-${uid}`} width={GRID_STEP_M} height={GRID_STEP_M} patternUnits="userSpaceOnUse">
             <circle cx={GRID_STEP_M / 2} cy={GRID_STEP_M / 2} r={0.012} fill="var(--color-grid-line)" />
           </pattern>
         </defs>
@@ -689,7 +701,7 @@ export function PieceCanvasEditor({
           y={-PAD}
           width={canvasWidthM + PAD * 2}
           height={canvasDepthM + PAD * 2}
-          fill="url(#pce-dotgrid)"
+          fill={`url(#pce-dotgrid-${uid})`}
           pointerEvents="none"
         />
         {Array.from({ length: Math.floor(canvasWidthM) + 1 }, (_, i) => (
@@ -783,7 +795,7 @@ export function PieceCanvasEditor({
             <PieceShape
               key={p.id}
               piece={p}
-              fill={sondermass ? 'url(#pce-hatch-warning)' : 'url(#pce-hatch)'}
+              fill={sondermass ? `url(#pce-hatch-warning-${uid})` : `url(#pce-hatch-${uid})`}
               fillOpacity={isDragTarget ? 0.25 : 1}
               stroke={selectedId === p.id ? 'var(--color-accent)' : 'var(--color-panel-stroke)'}
               strokeWidth={selectedId === p.id ? 0.035 : 0.02}
@@ -991,7 +1003,7 @@ export function PieceCanvasEditor({
                 }}
                 aria-pressed={isArmed}
                 aria-label={`Dreieckpodest ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Dreieckpodest — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten (anders als der Dreieck-Keil, der eine Näherung aus mehreren Rechtecken ist)"
+                title="Dreieckpodest — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten (anders als ein schräg gezogenes Zeichnen-Stück, das nur eine Näherung aus mehreren Rechtecken ist)"
                 className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
                   isArmed
                     ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
@@ -999,35 +1011,6 @@ export function PieceCanvasEditor({
                 }`}
               >
                 <span aria-hidden>◺</span>
-              </button>
-            );
-          })()}
-          {(() => {
-            const payload: ToolPayload = { kind: 'wedge' };
-            const isArmed = armed?.kind === 'wedge';
-            return (
-              <button
-                type="button"
-                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-                onPointerMove={handlePaletteButtonPointerMove}
-                onPointerUp={handlePaletteButtonPointerUp}
-                onClick={() => {
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  arm(isArmed ? null : payload);
-                }}
-                aria-pressed={isArmed}
-                aria-label={`Dreieck-Keil ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Dreieck-Keil — kein echtes NivTec-Bauteil, sondern 3 Reihen aus echten Systemplatten, die zu einer Spitze zulaufen"
-                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
-                }`}
-              >
-                <span aria-hidden>▲</span>
               </button>
             );
           })()}
@@ -1053,47 +1036,7 @@ export function PieceCanvasEditor({
           })()}
         </div>
 
-        {armed?.kind === 'wedge' && (
-          <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[var(--color-border)]">
-            <span className="text-xs text-[var(--color-text-muted)]">Breite:</span>
-            <button
-              type="button"
-              onClick={() => setWedgeBaseWidthM((w) => Math.max(1, round1(w - 0.5)))}
-              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
-            >
-              −
-            </button>
-            <span className="text-xs w-12 text-center" style={{ fontFamily: 'var(--font-mono)' }}>
-              {formatM(wedgeBaseWidthM)} m
-            </span>
-            <button
-              type="button"
-              onClick={() => setWedgeBaseWidthM((w) => Math.min(10, round1(w + 0.5)))}
-              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
-            >
-              +
-            </button>
-            <span className="text-xs text-[var(--color-text-muted)] ml-2">Reihen:</span>
-            <button
-              type="button"
-              onClick={() => setWedgeRowCount((r) => Math.max(2, r - 1))}
-              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
-            >
-              −
-            </button>
-            <span className="text-xs w-4 text-center" style={{ fontFamily: 'var(--font-mono)' }}>
-              {wedgeRowCount}
-            </span>
-            <button
-              type="button"
-              onClick={() => setWedgeRowCount((r) => Math.min(8, r + 1))}
-              className="w-5 h-5 flex items-center justify-center rounded border border-[var(--color-border)] text-xs cursor-pointer hover:border-[var(--color-accent)]"
-            >
-              +
-            </button>
-          </div>
-        )}
-        {(armed?.kind === 'wedge' || armed?.kind === 'draw') && (
+        {armed?.kind === 'draw' && (
           <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[var(--color-border)]">
             <span className="text-xs text-[var(--color-text-muted)]">Tiefe:</span>
             {([1, 2] as const).map((t) => (
@@ -1114,8 +1057,47 @@ export function PieceCanvasEditor({
           </div>
         )}
 
+        {(onUndo || pieces.length > 0) && (
+          <div className="flex items-center gap-1.5 ml-auto" role="group" aria-label="Verlauf">
+            {onUndo && (
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="Rückgängig (Strg/Cmd+Z)"
+                aria-label="Rückgängig"
+                className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
+              >
+                ↶
+              </button>
+            )}
+            {onRedo && (
+              <button
+                type="button"
+                onClick={onRedo}
+                disabled={!canRedo}
+                title="Wiederholen (Strg/Cmd+Umschalt+Z)"
+                aria-label="Wiederholen"
+                className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
+              >
+                ↷
+              </button>
+            )}
+            {onClear && pieces.length > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                title="Leert den ganzen Plan"
+                className="px-3 py-1.5 rounded-md text-sm border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+              >
+                Zurücksetzen
+              </button>
+            )}
+          </div>
+        )}
+
         {pieces.length > 0 && (
-          <div className="flex items-center gap-1.5 ml-auto" role="group" aria-label="Ganze Fläche verschieben">
+          <div className="flex items-center gap-1.5" role="group" aria-label="Ganze Fläche verschieben">
             <span className="text-xs text-[var(--color-text-muted)]">Alles verschieben</span>
             <button
               type="button"
@@ -1179,7 +1161,11 @@ export function PieceCanvasEditor({
             <kbd className="rounded border border-[var(--color-border)] px-1">T</kbd> Dreieckpodest
           </li>
           <li>
-            <kbd className="rounded border border-[var(--color-border)] px-1">K</kbd> Dreieck-Keil
+            <kbd className="rounded border border-[var(--color-border)] px-1">Strg/Cmd+Z</kbd> Rückgängig
+          </li>
+          <li>
+            <kbd className="rounded border border-[var(--color-border)] px-1">Strg/Cmd+Umschalt+Z</kbd> oder
+            <kbd className="rounded border border-[var(--color-border)] px-1">Strg/Cmd+Y</kbd> Wiederholen
           </li>
         </ul>
       </details>
