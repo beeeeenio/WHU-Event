@@ -2,24 +2,28 @@ import { useEffect, useRef, useState } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { LabeledFootPosition } from '../../domain/feet';
 import { footColorForHeight } from '../../domain/footColorScale';
 import { trianglePoints } from '../../domain/triangle';
 import type { LayoutResult, TriangleCorner } from '../../domain/types';
 
-// Real 48,3 mm Rohr (r≈0,024) — leicht überzeichnet für Lesbarkeit aus Kameraabstand.
-const FOOT_RADIUS_M = 0.032;
-const FOOT_PLATE_RADIUS_M = 0.08;   // runde Fußplatte am Boden (orange = Positionsmarker)
-const FOOT_PLATE_HEIGHT_M = 0.012;
-const FOOT_NUT_RADIUS_M = 0.048;    // Stellmutter der Verstellspindel
-const FOOT_NUT_HEIGHT_M = 0.03;
-const FOOT_NUT_CENTER_ABOVE_PLATE_M = 0.07;
+// Maße angelehnt an LV-/VS-Fuß: Ø48,3-mm-Außenrohr, Innenrohr, Gewindespindel, Stellmutter, Fußplatte.
+const FOOT_PLATE_RADIUS_M = 0.075;
+const FOOT_PLATE_TOP_RADIUS_M = 0.071;   // leichte Fase an der Oberkante
+const FOOT_PLATE_HEIGHT_M = 0.008;
+const FOOT_SPINDLE_RADIUS_M = 0.016;     // Gewindespindel
+const FOOT_SPINDLE_MAX_M = 0.09;
+const FOOT_NUT_RADIUS_M = 0.036;         // Sechskant-Stellmutter
+const FOOT_NUT_HEIGHT_M = 0.028;
+const FOOT_INNER_RADIUS_M = 0.021;       // Innenrohr
+const FOOT_OUTER_RADIUS_M = 0.026;       // Außenrohr (Hülse)
+const FOOT_SLEEVE_SHARE = 0.55;          // Anteil der Hülse an der Rohrlänge über der Mutter
+const FOOT_BAND_HEIGHT_M = 0.05;         // farbiger Klebering = Höhencode
+const FOOT_BAND_RADIUS_M = 0.0268;
+const FOOT_BAND_BELOW_DECK_M = 0.04;     // Abstand Ring-Oberkante unter Plattenunterseite
 export const PANEL_THICKNESS_M = 0.08;
-const MARKER_RADIUS_M = 0.09;
-// Orange (CI-Signalfarbe) markiert IMMER klar erkennbar, wo ein Fuß sitzt — oben UND
-// unten am Boden — unabhängig von der höhenkodierten Farbe des Fuß-Schafts dazwischen.
-const MARKER_COLOR = '#f08100';
 
 // Sichtbarer Alu-Strangpress-Rahmen rund um jede Platte (real ca. 4 cm).
 const FRAME_WIDTH_M = 0.04;
@@ -27,14 +31,138 @@ const FRAME_WIDTH_M = 0.04;
 const INFILL_RECESS_M = 0.005;
 // Gesamtfuge zwischen zwei Nachbarplatten (je 5 mm pro Seite) — wie bisher `p.w - 0.01`.
 const PANEL_GAP_M = 0.01;
-// Standard-Belagfarbe: schwarzer, matter Siebdruck-/Antirutschbelag.
-const DEFAULT_INFILL_COLOR = '#1f1f1f';
+// Standard-Belag: dunkle Siebdruckplatte mit Sechseck-Prägung.
+const DEFAULT_INFILL_COLOR = '#2b2724';
 const SONDERMASS_INFILL_COLOR = '#9a6b00';
 
 // Einmal gebaute, geteilte Materialien (nicht pro Mesh neu erzeugen).
-// Metalness bewusst ≤ 0.55: ohne Environment-Map wird hochmetallisches Material fast schwarz.
-const FRAME_MATERIAL = new THREE.MeshStandardMaterial({ color: '#c3c7cc', metalness: 0.55, roughness: 0.4 });
-const FOOT_HARDWARE_MATERIAL = new THREE.MeshStandardMaterial({ color: '#8d9299', metalness: 0.5, roughness: 0.45 });
+const GALVANIZED_MATERIAL = new THREE.MeshStandardMaterial({ color: '#a9aeb1', metalness: 0.85, roughness: 0.45 }); // Rohre, Platte
+const SPINDLE_MATERIAL = new THREE.MeshStandardMaterial({ color: '#7f8589', metalness: 0.9, roughness: 0.35 });    // Spindel, Mutter
+const FOOT_BAND_MATERIALS = new Map<string, THREE.MeshStandardMaterial>();
+function footBandMaterial(color: string): THREE.MeshStandardMaterial {
+  let m = FOOT_BAND_MATERIALS.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, metalness: 0, roughness: 0.6 });
+    FOOT_BAND_MATERIALS.set(color, m);
+  }
+  return m;
+}
+
+const HEX_TILE_M = 0.25; // eine Texturkachel deckt 25 × 25 cm ab
+
+let hexCanvasCache: HTMLCanvasElement | null | undefined;
+/** Einmal gezeichnete Sechseck-Prägung (Graustufen): hell = Plateau, dunkel = Rille. null ohne 2D-Canvas (Tests). */
+function hexCanvas(): HTMLCanvasElement | null {
+  if (hexCanvasCache !== undefined) return hexCanvasCache;
+  hexCanvasCache = null;
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = 'rgb(236,236,236)';
+  ctx.fillRect(0, 0, 256, 256);
+  const r = 8;                          // Sechseck-Umkreisradius in px
+  const w = Math.sqrt(3) * r;           // Spaltenabstand
+  const h = 1.5 * r;                    // Zeilenabstand
+  ctx.strokeStyle = 'rgb(185,185,185)';
+  ctx.lineWidth = 1.6;
+  for (let row = -1; row * h < 256 + r; row++) {
+    for (let col = -1; col * w < 256 + w; col++) {
+      const cx = col * w + (row % 2 !== 0 ? w / 2 : 0);
+      const cy = row * h;
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.PI / 6 + (k * Math.PI) / 3;
+        const px = cx + r * 0.82 * Math.cos(a);
+        const py = cy + r * 0.82 * Math.sin(a);
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+  for (let i = 0; i < 1500; i++) {
+    const x = (i * 97) % 256;
+    const y = (i * 57 + ((i * i) % 131)) % 256;
+    const v = 222 + ((i * 31) % 26);
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+  hexCanvasCache = c;
+  return c;
+}
+
+const INFILL_MATERIALS = new Map<string, THREE.MeshStandardMaterial>();
+/**
+ * Belag-Material je Farbe + Kachelwiederholung. repeatU/V = Plattenmaß / HEX_TILE_M bei Boxen (UV 0..1),
+ * bzw. 1/HEX_TILE_M bei Extrude-Geometrie (UV in Metern).
+ */
+function infillMaterial(color: string, repeatU: number, repeatV: number): THREE.MeshStandardMaterial {
+  const key = `${color}|${repeatU.toFixed(3)}|${repeatV.toFixed(3)}`;
+  let m = INFILL_MATERIALS.get(key);
+  if (m) return m;
+  const canvas = hexCanvas();
+  m = new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0 });
+  if (canvas) {
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.wrapS = map.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(repeatU, repeatV);
+    map.anisotropy = 8;
+    const bump = new THREE.CanvasTexture(canvas);
+    bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+    bump.repeat.set(repeatU, repeatV);
+    bump.anisotropy = 8;
+    m.map = map;
+    m.bumpMap = bump;
+    m.bumpScale = 1.5;
+  }
+  INFILL_MATERIALS.set(key, m);
+  return m;
+}
+
+let brushedCanvasCache: HTMLCanvasElement | null | undefined;
+/** Feine Längsstreifen (Graustufen) als Roughness-Map: Profil wirkt gebürstet statt plastikglatt. */
+function brushedCanvas(): HTMLCanvasElement | null {
+  if (brushedCanvasCache !== undefined) return brushedCanvasCache;
+  brushedCanvasCache = null;
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = 'rgb(128,128,128)';
+  ctx.fillRect(0, 0, 512, 64);
+  for (let y = 0; y < 64; y++) {
+    const v = 100 + ((y * 73 + ((y * y) % 17) * 11) % 60);
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(0, y, 512, 1);
+  }
+  brushedCanvasCache = c;
+  return c;
+}
+
+function makeFrameMaterial(rotate: boolean): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#cfd0cc', metalness: 0.9, roughness: 0.55 });
+  const canvas = brushedCanvas();
+  if (canvas) {
+    const t = new THREE.CanvasTexture(canvas);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(1, 4);
+    if (rotate) { t.center.set(0.5, 0.5); t.rotation = Math.PI / 2; }
+    m.roughnessMap = t;
+  } else {
+    m.roughness = 0.32;
+  }
+  return m;
+}
+
+// Eloxiertes Alu-Strangpressprofil: Streifen laufen in Profil-Längsrichtung.
+const FRAME_MATERIAL_X = makeFrameMaterial(false); // Profile entlang X (+ Dreiecke)
+const FRAME_MATERIAL_Z = makeFrameMaterial(true);  // Profile entlang Z
 
 /** Versetzt ein konvexes Polygon (u,v) um `t` nach innen (Kanten parallel verschieben, Nachbarn schneiden). */
 function insetPolygon(pts: Array<{ x: number; y: number }>, t: number): Array<{ x: number; y: number }> {
@@ -88,26 +216,46 @@ for (const corner of ['tl', 'tr', 'bl', 'br'] as TriangleCorner[]) {
   TRIANGLE_INFILL_SHAPES[corner] = shapeFrom(inner);
 }
 
-/** Ein Fuß: runde Bodenplatte (orange Marker) + Stellmutter (Metall) + höhenfarbiges Rohr bis unter die Platte. */
+/** Ein Fuß: Fußplatte → Gewindespindel → Stellmutter → Innenrohr → Außenhülse mit Höhen-Farbring. */
 function Foot({ x, z, baseY, heightM, color }: { x: number; z: number; baseY: number; heightM: number; color: string }) {
-  const tubeBottom = baseY + FOOT_PLATE_HEIGHT_M;
-  const tubeLen = Math.max(heightM - FOOT_PLATE_HEIGHT_M, 0.001);
-  const showNut = heightM > FOOT_NUT_CENTER_ABOVE_PLATE_M + FOOT_NUT_HEIGHT_M;
+  const plateTop = baseY + FOOT_PLATE_HEIGHT_M;
+  const deckBottom = baseY + heightM;
+  const available = Math.max(deckBottom - plateTop, 0.001);
+  const spindleLen = Math.min(FOOT_SPINDLE_MAX_M, available * 0.4);
+  const nutBottom = plateTop + spindleLen;
+  const tubeStart = nutBottom + FOOT_NUT_HEIGHT_M;
+  const tubeLen = deckBottom - tubeStart;
+  const hasTubes = tubeLen > 0.02;
+  const sleeveLen = hasTubes ? tubeLen * FOOT_SLEEVE_SHARE : 0;
+  const innerLen = hasTubes ? tubeLen - sleeveLen : 0;
+  const sleeveBottom = deckBottom - sleeveLen;
+  const showBand = sleeveLen > FOOT_BAND_HEIGHT_M + FOOT_BAND_BELOW_DECK_M + 0.01;
   return (
     <group>
-      <mesh position={[x, baseY + FOOT_PLATE_HEIGHT_M / 2, z]}>
-        <cylinderGeometry args={[FOOT_PLATE_RADIUS_M, FOOT_PLATE_RADIUS_M, FOOT_PLATE_HEIGHT_M, 24]} />
-        <meshStandardMaterial color={MARKER_COLOR} emissive={MARKER_COLOR} emissiveIntensity={0.35} roughness={0.6} metalness={0.2} />
+      <mesh position={[x, baseY + FOOT_PLATE_HEIGHT_M / 2, z]} material={GALVANIZED_MATERIAL} castShadow receiveShadow>
+        <cylinderGeometry args={[FOOT_PLATE_TOP_RADIUS_M, FOOT_PLATE_RADIUS_M, FOOT_PLATE_HEIGHT_M, 32]} />
       </mesh>
-      {showNut && (
-        <mesh position={[x, tubeBottom + FOOT_NUT_CENTER_ABOVE_PLATE_M, z]} material={FOOT_HARDWARE_MATERIAL}>
-          <cylinderGeometry args={[FOOT_NUT_RADIUS_M, FOOT_NUT_RADIUS_M, FOOT_NUT_HEIGHT_M, 6]} />
+      <mesh position={[x, plateTop + (hasTubes ? spindleLen : available) / 2, z]} material={SPINDLE_MATERIAL} castShadow>
+        <cylinderGeometry args={[FOOT_SPINDLE_RADIUS_M, FOOT_SPINDLE_RADIUS_M, hasTubes ? spindleLen : available, 12]} />
+      </mesh>
+      {hasTubes && (
+        <>
+          <mesh position={[x, nutBottom + FOOT_NUT_HEIGHT_M / 2, z]} material={SPINDLE_MATERIAL} castShadow>
+            <cylinderGeometry args={[FOOT_NUT_RADIUS_M, FOOT_NUT_RADIUS_M, FOOT_NUT_HEIGHT_M, 6]} />
+          </mesh>
+          <mesh position={[x, tubeStart + innerLen / 2, z]} material={GALVANIZED_MATERIAL} castShadow>
+            <cylinderGeometry args={[FOOT_INNER_RADIUS_M, FOOT_INNER_RADIUS_M, innerLen, 16]} />
+          </mesh>
+          <mesh position={[x, sleeveBottom + sleeveLen / 2, z]} material={GALVANIZED_MATERIAL} castShadow receiveShadow>
+            <cylinderGeometry args={[FOOT_OUTER_RADIUS_M, FOOT_OUTER_RADIUS_M, sleeveLen, 20]} />
+          </mesh>
+        </>
+      )}
+      {showBand && (
+        <mesh position={[x, deckBottom - FOOT_BAND_BELOW_DECK_M - FOOT_BAND_HEIGHT_M / 2, z]} material={footBandMaterial(color)}>
+          <cylinderGeometry args={[FOOT_BAND_RADIUS_M, FOOT_BAND_RADIUS_M, FOOT_BAND_HEIGHT_M, 20]} />
         </mesh>
       )}
-      <mesh position={[x, tubeBottom + tubeLen / 2, z]}>
-        <cylinderGeometry args={[FOOT_RADIUS_M, FOOT_RADIUS_M, tubeLen, 16]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.25} roughness={0.45} metalness={0.3} />
-      </mesh>
     </group>
   );
 }
@@ -125,23 +273,22 @@ function RectPanel({ cx, cz, deckY, w, d, infillColor }: {
   return (
     <group>
       {/* vorne / hinten (entlang X, volle Breite) */}
-      <mesh position={[cx, yMid, cz - od / 2 + F / 2]} material={FRAME_MATERIAL}>
+      <mesh position={[cx, yMid, cz - od / 2 + F / 2]} material={FRAME_MATERIAL_X} castShadow receiveShadow>
         <boxGeometry args={[ow, T, F]} />
       </mesh>
-      <mesh position={[cx, yMid, cz + od / 2 - F / 2]} material={FRAME_MATERIAL}>
+      <mesh position={[cx, yMid, cz + od / 2 - F / 2]} material={FRAME_MATERIAL_X} castShadow receiveShadow>
         <boxGeometry args={[ow, T, F]} />
       </mesh>
       {/* links / rechts (entlang Z, zwischen den Längsprofilen) */}
-      <mesh position={[cx - ow / 2 + F / 2, yMid, cz]} material={FRAME_MATERIAL}>
+      <mesh position={[cx - ow / 2 + F / 2, yMid, cz]} material={FRAME_MATERIAL_Z} castShadow receiveShadow>
         <boxGeometry args={[F, T, od - 2 * F]} />
       </mesh>
-      <mesh position={[cx + ow / 2 - F / 2, yMid, cz]} material={FRAME_MATERIAL}>
+      <mesh position={[cx + ow / 2 - F / 2, yMid, cz]} material={FRAME_MATERIAL_Z} castShadow receiveShadow>
         <boxGeometry args={[F, T, od - 2 * F]} />
       </mesh>
       {/* Belag */}
-      <mesh position={[cx, deckY + infillH / 2, cz]}>
+      <mesh position={[cx, deckY + infillH / 2, cz]} material={infillMaterial(infillColor, (ow - 2 * F) / HEX_TILE_M, (od - 2 * F) / HEX_TILE_M)} castShadow receiveShadow>
         <boxGeometry args={[ow - 2 * F, infillH, od - 2 * F]} />
-        <meshStandardMaterial color={infillColor} roughness={0.9} metalness={0} />
       </mesh>
     </group>
   );
@@ -166,6 +313,61 @@ interface Props {
   tiers: SceneTier[];
   /** Ruft das <canvas>-Element auf, sobald WebGL bereit ist — für den PNG-Export der 3D-Ansicht. */
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+}
+
+/** Lokale Reflexions-Umgebung (kein CDN, kein Asset) — nötig, damit Alu/Stahl mit hoher Metalness echt wirkt. */
+function LocalEnvironment() {
+  const { gl, scene } = useThree();
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const room = new RoomEnvironment();
+    const envMap = pmrem.fromScene(room, 0.04).texture;
+    scene.environment = envMap;
+    scene.environmentIntensity = 0.55;
+    room.dispose();
+    pmrem.dispose();
+    return () => {
+      scene.environment = null;
+      envMap.dispose();
+    };
+  }, [gl, scene]);
+  return null;
+}
+
+/** Schattenwerfende Sonne, deren Schattenkamera die ganze Szene abdeckt. */
+function SunLight({ centerX, centerZ, span, topY }: { centerX: number; centerZ: number; span: number; topY: number }) {
+  const lightRef = useRef<THREE.DirectionalLight>(null);
+  const { scene } = useThree();
+  const half = span / 2 + 2;
+  useEffect(() => {
+    const light = lightRef.current;
+    if (!light) return;
+    light.target.position.set(centerX, 0, centerZ);
+    scene.add(light.target);
+    light.target.updateMatrixWorld();
+    light.shadow.camera.updateProjectionMatrix();
+    return () => { scene.remove(light.target); };
+  }, [centerX, centerZ, span, scene]);
+  return (
+    <directionalLight
+      ref={lightRef}
+      position={[centerX + span * 0.8, topY + span * 1.5 + 4, centerZ + span * 0.6]}
+      intensity={2.2}
+      color="#fff6ea"
+      castShadow
+      shadow-mapSize-width={2048}
+      shadow-mapSize-height={2048}
+      shadow-bias={-0.0004}
+      shadow-normalBias={0.02}
+      shadow-radius={3}
+      shadow-camera-left={-half}
+      shadow-camera-right={half}
+      shadow-camera-top={half}
+      shadow-camera-bottom={-half}
+      shadow-camera-near={0.5}
+      shadow-camera-far={span * 4 + 20}
+    />
+  );
 }
 
 /**
@@ -221,6 +423,7 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
   const centerX = maxX / 2;
   const centerZ = maxZ / 2;
   const camDistance = Math.max(maxX, maxZ, 2) * 1.4;
+  const span = Math.max(maxX, maxZ, 2);
 
   const cameraPosition: [number, number, number] = topView
     ? [centerX, maxTopY + camDistance * 1.6, centerZ + 0.01]
@@ -257,18 +460,19 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
       </div>
       <div className="w-full h-[420px] rounded-lg overflow-hidden border border-[var(--color-border)]">
         <Canvas
+          shadows="percentage"
           camera={{ position: cameraPosition, fov: 40 }}
           gl={{ preserveDrawingBuffer: true }}
           onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
         >
-          <hemisphereLight args={['#ffffff', '#d9d2c3', 0.6]} />
-          <ambientLight intensity={0.35} />
-          <directionalLight position={[5, 10, 5]} intensity={1.4} />
-          <directionalLight position={[-5, 6, -5]} intensity={0.5} />
+          <LocalEnvironment />
+          <hemisphereLight args={['#ffffff', '#cfc8ba', 0.35]} />
+          <SunLight centerX={centerX} centerZ={centerZ} span={span} topY={maxTopY} />
+          <directionalLight position={[-5, 6, -5]} intensity={0.35} color="#e8eef5" />
 
-          <mesh position={[centerX, -0.01, centerZ]} rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[maxX + 2, maxZ + 2]} />
-            <meshStandardMaterial color="#f4eee0" roughness={1} metalness={0} />
+          <mesh position={[centerX, -0.001, centerZ]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+            <planeGeometry args={[maxX + 6, maxZ + 6]} />
+            <meshStandardMaterial color="#d8d5ce" roughness={0.95} metalness={0} />
           </mesh>
 
           {validTiers.map((tier, tierIndex) => {
@@ -291,12 +495,11 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
                     />
                   ) : (
                     <group key={i} position={[p.x + offsetX, deckY, p.y + offsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
-                      <mesh material={FRAME_MATERIAL}>
+                      <mesh material={FRAME_MATERIAL_X} castShadow receiveShadow>
                         <extrudeGeometry args={[TRIANGLE_FRAME_SHAPES[p.corner], { depth: PANEL_THICKNESS_M, bevelEnabled: false }]} />
                       </mesh>
-                      <mesh>
+                      <mesh material={infillMaterial(tier.panelColor ?? DEFAULT_INFILL_COLOR, 1 / HEX_TILE_M, 1 / HEX_TILE_M)} castShadow receiveShadow>
                         <extrudeGeometry args={[TRIANGLE_INFILL_SHAPES[p.corner], { depth: PANEL_THICKNESS_M - INFILL_RECESS_M, bevelEnabled: false }]} />
-                        <meshStandardMaterial color={tier.panelColor ?? DEFAULT_INFILL_COLOR} roughness={0.9} metalness={0} />
                       </mesh>
                     </group>
                   ),
@@ -311,20 +514,6 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
                     heightM={tier.heightM}
                     color={tier.footColor ?? footColorForHeight(tier.heightM * 100)}
                   />
-                ))}
-
-                {/* Orange Markierungspunkte oben (Deckplatte) — so ist jede
-                    Fußposition aus jedem Blickwinkel (Perspektive wie Draufsicht) eindeutig
-                    erkennbar, unabhängig von der höhenkodierten Schaftfarbe. */}
-                {tier.feet.map((f, i) => (
-                  <mesh
-                    key={`marker-top-${i}`}
-                    position={[f.renderX + offsetX, deckY + PANEL_THICKNESS_M + 0.005, f.renderY + offsetZ]}
-                    rotation={[-Math.PI / 2, 0, 0]}
-                  >
-                    <circleGeometry args={[MARKER_RADIUS_M, 20]} />
-                    <meshStandardMaterial color={MARKER_COLOR} emissive={MARKER_COLOR} emissiveIntensity={0.5} />
-                  </mesh>
                 ))}
               </group>
             );
@@ -349,8 +538,7 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
         </Canvas>
       </div>
       <p className="text-xs text-[var(--color-text-muted)]">
-        Orange Punkte markieren jede Fußposition oben und unten — der Schaft dazwischen ist nach Fußhöhe eingefärbt
-        (siehe Legende). Verzoomt/verdreht? "↺ Zurücksetzen" bringt die Kamera zurück.
+        Der farbige Ring am Fußrohr zeigt die Fußhöhe (siehe Legende). Verzoomt/verdreht? "↺ Zurücksetzen" bringt die Kamera zurück.
       </p>
     </div>
   );
