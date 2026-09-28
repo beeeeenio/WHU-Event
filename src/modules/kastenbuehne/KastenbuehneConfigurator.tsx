@@ -16,6 +16,7 @@ import { buildLayoutFromPieces, normalizeToOrigin } from '../../domain/customSha
 import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import { parseKastenbuehneFile } from '../../domain/savedState';
 import { formatMeters } from '../../lib/format';
+import { useDraftAutosave } from '../../hooks/useDraftAutosave';
 import { useExportCanvas } from '../../hooks/useExportCanvas';
 import { NO_RAILING_SIDES, useDerivedGeometry } from '../../hooks/useDerivedGeometry';
 import { usePieceLayer } from '../../hooks/usePieceLayer';
@@ -53,6 +54,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   }
 
   const currentSavedState = { heightCm, pieces: layer.pieces };
+  const { restored, discard } = useDraftAutosave('kastenbuehne', currentSavedState, applySavedState);
 
   return (
     <div className="space-y-6">
@@ -61,6 +63,22 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           <h2 className="text-lg font-semibold text-[var(--color-text)]">Kastenbühne</h2>
           <PlanFileBar namespace="kastenbuehne" currentData={currentSavedState} onLoad={applySavedState} />
         </div>
+        {restored && (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-accent)]">
+            <span>Letzter Stand automatisch wiederhergestellt.</span>
+            <button
+              type="button"
+              onClick={() => {
+                discard();
+                layer.replace([]);
+                setHeightCm(STRUCTURE_RULES.buehne.heightOptionsCm[0]);
+              }}
+              className="shrink-0 text-xs underline"
+            >
+              Verwerfen
+            </button>
+          </div>
+        )}
         <p className="text-sm text-[var(--color-text-muted)]">
           Kein Regler, keine vorgefertigte Fläche — ziehe Stücke oder das Freizeichnen-Werkzeug direkt auf einen
           leeren Plan. Alles entsteht ausschließlich durch das, was du selbst platzierst.
