@@ -16,10 +16,20 @@ export function StairsRampCalculator({ heightCm }: Props) {
   return (
     <div className="space-y-2">
       <div className="flex gap-2">
-        <button type="button" onClick={() => setMode('treppe')} className={tabClass(mode === 'treppe')}>
+        <button
+          type="button"
+          onClick={() => setMode('treppe')}
+          aria-pressed={mode === 'treppe'}
+          className={tabClass(mode === 'treppe')}
+        >
           Treppe
         </button>
-        <button type="button" onClick={() => setMode('rampe')} className={tabClass(mode === 'rampe')}>
+        <button
+          type="button"
+          onClick={() => setMode('rampe')}
+          aria-pressed={mode === 'rampe'}
+          className={tabClass(mode === 'rampe')}
+        >
           Rampe
         </button>
       </div>

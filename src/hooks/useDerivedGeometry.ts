@@ -3,6 +3,8 @@ import { countFeet, footPositions, labeledFootPositions } from '../domain/feet';
 import { buildMaterialList } from '../domain/materialList';
 import type { LayoutResult, RailingSide, StructureTypeId } from '../domain/types';
 
+export const NO_RAILING_SIDES: RailingSide[] = [];
+
 /**
  * Berechnet Füße und Materialliste aus einem BELIEBIGEN LayoutResult — egal ob es aus
  * Breite/Tiefe (computeLayout) oder aus frei zusammengestellten Reihen (buildLayoutFromRows)

@@ -129,6 +129,7 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
         <button
           type="button"
           onClick={() => setTopView(false)}
+          aria-pressed={!topView}
           className={`px-3 py-1.5 rounded-md text-sm border ${!topView ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]' : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'}`}
         >
           Perspektive
@@ -136,6 +137,7 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
         <button
           type="button"
           onClick={() => setTopView(true)}
+          aria-pressed={topView}
           className={`px-3 py-1.5 rounded-md text-sm border ${topView ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]' : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'}`}
         >
           Draufsicht

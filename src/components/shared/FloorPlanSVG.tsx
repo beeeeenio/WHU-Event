@@ -4,6 +4,7 @@ import type { LabeledFootPosition } from '../../domain/feet';
 import { footColorForHeight } from '../../domain/footColorScale';
 import { trianglePoints } from '../../domain/triangle';
 import type { LayoutResult, RailingSide } from '../../domain/types';
+import { formatMeters } from '../../lib/format';
 
 interface Props {
   layout: LayoutResult;
@@ -198,7 +199,7 @@ export function FloorPlanSVG({
         fill="var(--color-text-muted)"
         fontFamily="var(--font-mono)"
       >
-        {footprint.widthM.toFixed(2)} × {footprint.depthM.toFixed(2)} m
+        {formatMeters(footprint.widthM)} × {formatMeters(footprint.depthM)} m
       </text>
       {railingConfigurable &&
         (Object.keys(SIDE_LABELS) as RailingSide[]).map((side) => {

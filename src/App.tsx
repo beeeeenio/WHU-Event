@@ -150,7 +150,7 @@ function App() {
               und Materialliste automatisch berechnet.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {CIS.map((c) => (
               <button
                 key={c.id}
@@ -204,7 +204,7 @@ function App() {
 
       <footer className="max-w-4xl mx-auto px-4 py-6 text-xs text-[var(--color-text-muted)]">
         Privates Lernprojekt, inspiriert vom NivTec-Systempodest-Konzept. Alle Maße/Regeln sind recherchierte bzw.
-        plausible Annahmen ohne Gewähr — keine offiziellen NivTec-Preise oder Artikelnummern.
+        plausible Annahmen ohne Gewähr — keine offiziellen NivTec-Preise; Artikelnummern nach eigener Recherche, ohne Gewähr.
       </footer>
     </div>
   );

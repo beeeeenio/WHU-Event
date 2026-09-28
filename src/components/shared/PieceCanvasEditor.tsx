@@ -15,6 +15,7 @@ import {
 import { isSondermassPiece, TRIANGLE_PANEL_SIZE_M } from '../../domain/panels';
 import { mirrorTriangleCornerDiagonal, mirrorTriangleCornerVertical, nextTriangleCorner, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
+import { formatMeters } from '../../lib/format';
 
 type ToolPayload =
   | { kind: 'piece'; w: number; d: number }
@@ -60,10 +61,6 @@ const GRID_STEP_M = 0.5;
 // längeren erreichen, bevor ein Keil statt einer geraden Fläche entsteht (rein zufällige
 // Diagonal-Abweichung beim geraden Ziehen soll nicht versehentlich einen Keil auslösen).
 const DIAGONAL_RATIO_THRESHOLD = 0.35;
-
-function formatM(v: number): string {
-  return v.toFixed(1).replace('.', ',');
-}
 
 function round1(v: number): number {
   return Math.round(v * 10) / 10;
@@ -151,7 +148,7 @@ function DimensionLabel({ x, y, w, d }: { x: number; y: number; w: number; d: nu
       fontFamily="var(--font-mono)"
       style={{ pointerEvents: 'none' }}
     >
-      {formatM(w)}×{formatM(d)} m
+      {formatMeters(w, 1)}×{formatMeters(d, 1)} m
     </text>
   );
 }
@@ -626,7 +623,7 @@ export function PieceCanvasEditor({
       </p>
 
       {armed && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-accent)]">
+        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-accent)]">
           <span>
             {armed.kind === 'draw'
               ? 'Jetzt im Plan unten klicken, gedrückt halten, über die gewünschte Breite oder Tiefe ziehen und dann loslassen.'
@@ -638,9 +635,9 @@ export function PieceCanvasEditor({
         </div>
       )}
       {selectedPiece && (
-        <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
+        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
           <span className="text-[var(--color-text)]">
-            Ausgewählt: {formatM(selectedPiece.w)}×{formatM(selectedPiece.d)} m
+            Ausgewählt: {formatMeters(selectedPiece.w, 1)}×{formatMeters(selectedPiece.d, 1)} m
           </span>
           <div className="flex gap-2">
             <button
@@ -668,7 +665,7 @@ export function PieceCanvasEditor({
         </div>
       )}
       {blockedMessage && (
-        <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-danger)]">
+        <div role="status" className="rounded-md border border-[var(--color-danger)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-danger)]">
           {blockedMessage}
         </div>
       )}
@@ -806,7 +803,7 @@ export function PieceCanvasEditor({
               onPointerUp={() => handlePiecePointerUp(p)}
             >
               <title>
-                {formatM(p.w)}×{formatM(p.d)} m bei x={formatM(p.x)}, y={formatM(p.y)} m
+                {formatMeters(p.w, 1)}×{formatMeters(p.d, 1)} m bei x={formatMeters(p.x, 1)}, y={formatMeters(p.y, 1)} m
               </title>
             </PieceShape>
           );
@@ -902,8 +899,8 @@ export function PieceCanvasEditor({
                 const drag = classifyDrag(tracing.start, tracing.current, pieceThicknessM);
                 const label =
                   drag.mode === 'taper'
-                    ? `Keil, oben ${formatM(drag.baseWidthM)} m, ${drag.rowCount} Reihen`
-                    : `Gerade, ${formatM(Math.max(Math.abs(tracing.current.x - tracing.start.x), Math.abs(tracing.current.y - tracing.start.y)))} m`;
+                    ? `Keil, oben ${formatMeters(drag.baseWidthM, 1)} m, ${drag.rowCount} Reihen`
+                    : `Gerade, ${formatMeters(Math.max(Math.abs(tracing.current.x - tracing.start.x), Math.abs(tracing.current.y - tracing.start.y)), 1)} m`;
                 return (
                   <text
                     x={tracing.current.x}
@@ -930,7 +927,7 @@ export function PieceCanvasEditor({
             // Nur die Breite zeigen reicht für die Hauptplatte (einzige 2-m-Option, eindeutig) —
             // bei Sondermaß-Stücken muss auch die Tiefe mit rein, sonst sähen die neue 0,5×2- und
             // die bestehende 0,5×1-Platte optisch identisch aus ("0,5 m" für beide).
-            const label = opt.isSondermass ? `${formatM(opt.w)}×${formatM(opt.d)} m` : `${formatM(opt.w)} m`;
+            const label = opt.isSondermass ? `${formatMeters(opt.w, 1)}×${formatMeters(opt.d, 1)} m` : `${formatMeters(opt.w, 1)} m`;
             return (
               <button
                 key={`${opt.w}x${opt.d}`}

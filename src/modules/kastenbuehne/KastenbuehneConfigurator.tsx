@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AufbauScene3D } from '../../components/shared/AufbauScene3D';
 import { ExportButtons } from '../../components/shared/ExportButtons';
 import { FloorPlanSVG } from '../../components/shared/FloorPlanSVG';
@@ -15,7 +15,9 @@ import { WarningBanner } from '../../components/shared/WarningBanner';
 import { buildLayoutFromPieces, normalizeToOrigin } from '../../domain/customShape';
 import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import { parseKastenbuehneFile } from '../../domain/savedState';
-import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import { formatMeters } from '../../lib/format';
+import { useExportCanvas } from '../../hooks/useExportCanvas';
+import { NO_RAILING_SIDES, useDerivedGeometry } from '../../hooks/useDerivedGeometry';
 import { usePieceLayer } from '../../hooks/usePieceLayer';
 import type { CiId } from '../../lib/ci';
 
@@ -24,7 +26,7 @@ type ResultTab = 'kennzahlen' | 'grundriss' | '3d' | 'material';
 export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   const [heightCm, setHeightCm] = useState(STRUCTURE_RULES.buehne.heightOptionsCm[0]);
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { onCanvasReady, getCanvas } = useExportCanvas(() => setResultTab('3d'));
 
   const layer = usePieceLayer();
 
@@ -35,7 +37,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
 
   // Kastenbühne ist regeltechnisch eine ganz normale Bühne (gleiche Höhenserie,
   // Verstrebungs-/Geländerschwellen) — nur der Bauweg dahin ist ein anderer.
-  const { totalFeet, labeledFeet, materialList } = useDerivedGeometry(layout, 'buehne', heightCm, []);
+  const { totalFeet, labeledFeet, materialList } = useDerivedGeometry(layout, 'buehne', heightCm, NO_RAILING_SIDES);
   const railingRequired = isRailingRequired('buehne', heightCm);
 
   const hasContent = layer.pieces.length > 0;
@@ -124,7 +126,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
             </div>
             <ExportButtons
               materialList={materialList}
-              canvasRef={canvasRef}
+              getCanvas={getCanvas}
               filenamePrefix="kastenbuehne"
               pptx={{
                 sections: [{ layout, feet: labeledFeet, heightCm, label: 'Kastenbühne' }],
@@ -137,8 +139,8 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           {resultTab === 'kennzahlen' && (
             <SummaryStats
               stats={[
-                { label: 'Baugröße', value: `${layout.widthM.toFixed(2)} × ${layout.depthM.toFixed(2)} m` },
-                { label: 'Fläche', value: `${layout.areaM2.toFixed(2)} m²` },
+                { label: 'Baugröße', value: `${formatMeters(layout.widthM)} × ${formatMeters(layout.depthM)} m` },
+                { label: 'Fläche', value: `${formatMeters(layout.areaM2)} m²` },
                 { label: 'Podeste', value: `${layout.panels.length}`, hint: 'Systempodeste' },
                 { label: 'Füße gesamt', value: `${totalFeet}` },
               ]}
@@ -152,9 +154,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           <div className={resultTab === '3d' ? '' : 'hidden'}>
             <AufbauScene3D
               tiers={[{ layout, feet: labeledFeet, heightM: heightCm / 100 }]}
-              onCanvasReady={(c) => {
-                canvasRef.current = c;
-              }}
+              onCanvasReady={onCanvasReady}
             />
           </div>
 

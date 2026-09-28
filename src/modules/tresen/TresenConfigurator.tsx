@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AufbauScene3D, PANEL_THICKNESS_M } from '../../components/shared/AufbauScene3D';
 import { ExportButtons } from '../../components/shared/ExportButtons';
 import { FloorPlanSVG } from '../../components/shared/FloorPlanSVG';
@@ -16,7 +16,9 @@ import { buildMaterialList, mergeMaterialLists } from '../../domain/materialList
 import { isBracingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import { SPINDEL_HEIGHT_OPTIONS_CM } from '../../domain/tresen';
 import { parseTresenFile } from '../../domain/savedState';
-import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
+import { formatMeters } from '../../lib/format';
+import { useExportCanvas } from '../../hooks/useExportCanvas';
+import { NO_RAILING_SIDES, useDerivedGeometry } from '../../hooks/useDerivedGeometry';
 import { usePieceLayer } from '../../hooks/usePieceLayer';
 import type { CiId } from '../../lib/ci';
 
@@ -34,7 +36,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   const [baseHeightCm, setBaseHeightCm] = useState(STRUCTURE_RULES.tresen.heightOptionsCm[0]);
   const [spindelHeightCm, setSpindelHeightCm] = useState(SPINDEL_HEIGHT_OPTIONS_CM[1]);
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { onCanvasReady, getCanvas } = useExportCanvas(() => setResultTab('3d'));
 
   const base = usePieceLayer();
   const top = usePieceLayer();
@@ -60,12 +62,12 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
     totalFeet: baseTotalFeet,
     labeledFeet: baseLabeledFeet,
     materialList: baseMaterialList,
-  } = useDerivedGeometry(baseLayout, 'tresen', baseHeightCm, []);
+  } = useDerivedGeometry(baseLayout, 'tresen', baseHeightCm, NO_RAILING_SIDES);
   const { totalFeet: topTotalFeet, labeledFeet: topLabeledFeet } = useDerivedGeometry(
     topLayout,
     'tresen',
     spindelHeightCm,
-    [],
+    NO_RAILING_SIDES,
   );
 
   // Thekenplatte: eigenes Materialliste-Listing mit Spindelfuß-Label statt LV-Fuß, ohne Aussteifung.
@@ -165,20 +167,24 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
         <div className="space-y-2.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Spindelfuß-Ausgleich</span>
-            {SPINDEL_HEIGHT_OPTIONS_CM.map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setSpindelHeightCm(h)}
-                className={`px-3 py-1.5 rounded-md text-sm border ${
-                  spindelHeightCm === h
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'
-                }`}
-              >
-                {h} cm
-              </button>
-            ))}
+            {SPINDEL_HEIGHT_OPTIONS_CM.map((h) => {
+              const active = spindelHeightCm === h;
+              return (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setSpindelHeightCm(h)}
+                  aria-pressed={active}
+                  className={`px-3 py-1.5 rounded-md text-sm border ${
+                    active
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'
+                  }`}
+                >
+                  {h} cm
+                </button>
+              );
+            })}
             <button
               type="button"
               onClick={setThekeToHalfDepth}
@@ -232,7 +238,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
             </div>
             <ExportButtons
               materialList={materialList}
-              canvasRef={canvasRef}
+              getCanvas={getCanvas}
               filenamePrefix="tresen"
               pptx={{
                 sections: [
@@ -250,7 +256,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
               stats={[
                 {
                   label: 'Unterbaugröße',
-                  value: `${(baseBoundingBox?.widthM ?? 0).toFixed(2)} × ${(baseBoundingBox?.depthM ?? 0).toFixed(2)} m`,
+                  value: `${formatMeters(baseBoundingBox?.widthM ?? 0)} × ${formatMeters(baseBoundingBox?.depthM ?? 0)} m`,
                 },
                 { label: 'Gesamthöhe (ca.)', value: `${totalHeightCm} cm` },
                 { label: 'Podeste gesamt', value: `${baseLayout.panels.length + topLayout.panels.length}` },
@@ -299,9 +305,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
                   panelColor: '#c08a00',
                 },
               ]}
-              onCanvasReady={(c) => {
-                canvasRef.current = c;
-              }}
+              onCanvasReady={onCanvasReady}
             />
           </div>
 

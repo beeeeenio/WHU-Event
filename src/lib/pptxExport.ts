@@ -4,6 +4,7 @@ import type { LabeledFootPosition } from '../domain/feet';
 import { footColorForHeight } from '../domain/footColorScale';
 import type { LayoutResult, TriangleCorner } from '../domain/types';
 import { CI_PPTX_LOGOS, type CiId } from './ci';
+import { formatMeters } from './format';
 
 /**
  * PowerPoints eingebautes "rtTriangle"-Autoshape hat bei rot=0° den rechten Winkel laut
@@ -52,7 +53,7 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
   const box = boundingBoxOf(layout.panels);
   if (!box || box.widthM <= 0 || box.depthM <= 0) return;
 
-  const dims = `${box.widthM.toFixed(2)} × ${box.depthM.toFixed(2)} m, BH ${heightCm} cm`;
+  const dims = `${formatMeters(box.widthM)} × ${formatMeters(box.depthM)} m, BH ${heightCm} cm`;
   slide.addText(label ? `${label} — ${dims}` : dims, {
     x: region.x,
     y: region.y,

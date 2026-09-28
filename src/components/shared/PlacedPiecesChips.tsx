@@ -1,8 +1,5 @@
 import type { Piece2D } from '../../domain/customShape';
-
-function formatM(v: number): string {
-  return v.toFixed(1).replace('.', ',');
-}
+import { formatMeters } from '../../lib/format';
 
 interface Props {
   pieces: Piece2D[];
@@ -22,12 +19,12 @@ export function PlacedPiecesChips({ pieces, onRemovePiece }: Props) {
           key={p.id}
           type="button"
           onClick={() => onRemovePiece(p.id)}
-          title={`Bei x=${formatM(p.x)}, y=${formatM(p.y)} m — klicken zum Entfernen`}
+          title={`Bei x=${formatMeters(p.x, 1)}, y=${formatMeters(p.y, 1)} m — klicken zum Entfernen`}
           className="group flex items-center gap-1.5 rounded-full border border-[var(--color-panel-stroke)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-text)] hover:border-[var(--color-danger)]"
         >
           <span style={{ fontFamily: 'var(--font-mono)' }}>
             {p.corner !== undefined ? '◺ ' : ''}
-            {formatM(p.w)}×{formatM(p.d)} m
+            {formatMeters(p.w, 1)}×{formatMeters(p.d, 1)} m
           </span>
           <span className="text-[var(--color-text-muted)] group-hover:text-[var(--color-danger)]" aria-hidden>
             ×
