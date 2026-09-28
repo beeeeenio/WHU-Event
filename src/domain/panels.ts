@@ -34,6 +34,14 @@ export const RECT_CATALOG: PanelSize[] = [
 export const TRIANGLE_PANEL_SIZE_M = 1;
 export const TRIANGLE_SIZE_KEY = 'dreieck-1x1';
 
+/** Viertelkreis-Podest: Radius 1 m, Bounding-Box 1×1 m. */
+export const QUARTER_CIRCLE_RADIUS_M = 1;
+export const QUARTER_CIRCLE_SIZE_KEY = 'viertelkreis-r1';
+
+/** 2×1 m Dreieckpodeste: Katheten 2×1 m, Bounding-Box 2×1 oder 1×2 je Orientierung. */
+export const TRIANGLE_2X1_LEFT_KEY = 'dreieck-2x1-links';
+export const TRIANGLE_2X1_RIGHT_KEY = 'dreieck-2x1-rechts';
+
 /** Bekannte Artikelnummern, Schlüssel = sortiertes (w,d)-Paar (Orientierung egal).
  *  Weitere Nummern unbekannt → '–', bewusst nicht erfunden. */
 const ARTICLE_NUMBERS: Record<string, string> = {
@@ -136,4 +144,15 @@ function canonicalArticleKey(w: number, d: number): string {
 /** Offizielle NivTec-Artikelnummer für eine Plattengröße, falls bekannt. */
 export function articleNumberFor(w: number, d: number): string | undefined {
   return ARTICLE_NUMBERS[canonicalArticleKey(w, d)];
+}
+
+/** True für Katalog-Dreieckpodeste: (1,1), (2,1), oder (1,2) innerhalb einer kleinen Toleranz. */
+export function isCatalogTriangleBox(w: number, d: number): boolean {
+  const eps = 1e-6;
+  const isEqual = (a: number, b: number) => Math.abs(a - b) < eps;
+  return (
+    (isEqual(w, TRIANGLE_PANEL_SIZE_M) && isEqual(d, TRIANGLE_PANEL_SIZE_M)) ||
+    (isEqual(w, 2) && isEqual(d, 1)) ||
+    (isEqual(w, 1) && isEqual(d, 2))
+  );
 }

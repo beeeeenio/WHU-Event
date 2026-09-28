@@ -1,13 +1,17 @@
 import {
   catalogSizeKey,
   isSondermassPiece,
+  QUARTER_CIRCLE_RADIUS_M,
+  QUARTER_CIRCLE_SIZE_KEY,
   RECT_CATALOG,
+  TRIANGLE_2X1_LEFT_KEY,
+  TRIANGLE_2X1_RIGHT_KEY,
   TRIANGLE_PANEL_SIZE_M,
   TRIANGLE_SIZE_KEY,
   widthsForDepth,
 } from './panels';
-import { nextTriangleCorner } from './triangle';
-import type { LayoutResult, PanelInstance, TriangleCorner } from './types';
+import { mirrorTriangleCornerDiagonal, nextTriangleCorner, triangleHand } from './triangle';
+import type { LayoutResult, PanelInstance, PieceShape, TriangleCorner } from './types';
 
 const EPS = 1e-6;
 const GRID_M = 0.5;
@@ -64,6 +68,8 @@ export interface Piece2D {
    *  (isSondermassPiece/isPrimaryPanelPiece/catalogSizeKey) aufgerufen wird, sonst würde ein
    *  Dreieck fälschlich als das Rechteck erkannt. */
   corner?: TriangleCorner;
+  /** Form des Stücks — undefined = normales Rechteck. Shape-Feld und corner-Feld gehören zusammen. */
+  shape?: PieceShape;
 }
 
 /** Frisch erzeugtes Stück ohne id — von Keil/Zeichnen-Werkzeug erzeugt, bevor es dem
@@ -74,6 +80,7 @@ export interface FilledPiece {
   w: number;
   d: number;
   corner?: TriangleCorner;
+  shape?: PieceShape;
 }
 
 let idCounter = 0;
@@ -92,19 +99,44 @@ export function reservePieceIds(ids: Iterable<string>): void {
 }
 
 /** Dreht ein Stück an Ort und Stelle — für ein Rechteck der bekannte Breite/Tiefe-Tausch
- *  (2 Zustände); für das Dreieckpodest ein Wechsel zur nächsten Ecke im Uhrzeigersinn
- *  (4 Zustände, siehe nextTriangleCorner) — die Bounding-Box bleibt dabei immer 1×1, ändert
- *  sich also nie, kann also nie neu mit etwas kollidieren. Zentrale Stelle statt (wie bisher)
- *  dreifach dupliziert in den Konfiguratoren. */
+ *  (2 Zustände); für ein Ecken-Stück (Dreieck/Viertelkreis): Wechsel zur nächsten Ecke im
+ *  Uhrzeigersinn UND Tausch der Bounding-Box-Dimensionen w↔d, was 4 Zustände pro Stück gibt
+ *  (oder 2 bei 1×1). Für 2×1-Dreiecke: Rotation wechselt die Box zwischen 2×1 und 1×2.
+ *  Zentrale Stelle statt (wie bisher) dreifach dupliziert in den Konfiguratoren. */
 export function rotatePieceInPlace(piece: Piece2D): Piece2D {
-  if (piece.corner !== undefined) return { ...piece, corner: nextTriangleCorner(piece.corner) };
+  if (piece.corner !== undefined) {
+    return { ...piece, corner: nextTriangleCorner(piece.corner), w: piece.d, d: piece.w };
+  }
   return { ...piece, w: piece.d, d: piece.w };
+}
+
+/** Spiegelt ein Stück an der Hauptdiagonale (x/y-Transposition der Box). Nur sinnvoll für
+ *  nicht-quadratische Ecken-Stücke wie 2×1-Dreiecke; quadratische Stücke oder Rechtecke
+ *  werden unverändert zurückgegeben. */
+export function mirrorPieceInPlace(piece: Piece2D): Piece2D {
+  if (piece.corner === undefined) return piece;
+  if (Math.abs(piece.w - piece.d) < 1e-6) return piece; // quadratisch: kein Unterschied
+  // Non-square cornered piece: swap w/d and mirror the corner
+  return { ...piece, w: piece.d, d: piece.w, corner: mirrorTriangleCornerDiagonal(piece.corner) };
 }
 
 export interface CatalogPieceOption {
   w: number;
   d: number;
   isSondermass: boolean;
+}
+
+/** Gruppierungsschlüssel für ein Dreieck-Podest mit Ecke in Materialliste/Zählung.
+ *  Unterscheidet zwischen 1×1, 2×1-links, und 2×1-rechts je nach Größe und Orientierung. */
+export function triangleSizeKey(piece: { w: number; d: number; corner?: TriangleCorner }): string {
+  if (piece.corner === undefined) {
+    throw new Error('triangleSizeKey: corner is required');
+  }
+  if (Math.abs(piece.w - TRIANGLE_PANEL_SIZE_M) < 1e-6 && Math.abs(piece.d - TRIANGLE_PANEL_SIZE_M) < 1e-6) {
+    return TRIANGLE_SIZE_KEY;
+  }
+  const hand = triangleHand(piece.corner, piece.w, piece.d);
+  return hand === 'links' ? TRIANGLE_2X1_LEFT_KEY : TRIANGLE_2X1_RIGHT_KEY;
 }
 
 /** Feste, kanvas-unabhängige Palette — es gibt kein pro-Canvas fixiertes "rowDepthM" mehr:
@@ -216,20 +248,22 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
 
   for (const piece of pieces) {
     if (piece.w <= 0 || piece.d <= 0) continue;
-    // Dreieck zuerst behandeln und dabei komplett aussteigen (`continue`) — eine (w,d)-basierte
+    // Dreieck/Viertelkreis zuerst behandeln und dabei komplett aussteigen (`continue`) — eine (w,d)-basierte
     // Katalogfunktion wie isSondermassPiece/catalogSizeKey würde (1,1) sonst fälschlich als das
     // echte 1×1-Sondermaß-Rechteck erkennen (identische Bounding-Box, siehe Piece2D.corner-Doku).
     if (piece.corner !== undefined) {
+      const sizeKey = piece.shape === 'viertelkreis' ? QUARTER_CIRCLE_SIZE_KEY : triangleSizeKey(piece);
       panels.push({
         x: round3(piece.x),
         y: round3(piece.y),
         w: piece.w,
         d: piece.d,
-        sizeKey: TRIANGLE_SIZE_KEY,
+        sizeKey,
         isSondermass: false,
         corner: piece.corner,
+        shape: piece.shape,
       });
-      panelCountsBySize[TRIANGLE_SIZE_KEY] = (panelCountsBySize[TRIANGLE_SIZE_KEY] ?? 0) + 1;
+      panelCountsBySize[sizeKey] = (panelCountsBySize[sizeKey] ?? 0) + 1;
       maxX = Math.max(maxX, piece.x + piece.w);
       maxY = Math.max(maxY, piece.y + piece.d);
       continue;
@@ -249,8 +283,15 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
     depthM: round3(maxY),
     areaM2: round3(
       panels.reduce((sum, p) => {
-        // Dreieck hat halbe Fläche der Bounding-Box
-        const area = p.corner !== undefined ? (p.w * p.d) / 2 : p.w * p.d;
+        let area: number;
+        if (p.corner !== undefined) {
+          // Dreieck hat halbe Fläche der Bounding-Box, Viertelkreis hat π*r²/4
+          area = p.shape === 'viertelkreis'
+            ? (Math.PI * QUARTER_CIRCLE_RADIUS_M * QUARTER_CIRCLE_RADIUS_M) / 4
+            : (p.w * p.d) / 2;
+        } else {
+          area = p.w * p.d;
+        }
         return sum + area;
       }, 0),
     ),

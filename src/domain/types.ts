@@ -20,6 +20,9 @@ export interface PanelSize {
 /** Welche Ecke der Bounding-Box eines Dreieckpodests den rechten Winkel trägt. */
 export type TriangleCorner = 'tl' | 'tr' | 'bl' | 'br';
 
+/** Form eines Stücks — Standard ist Rechteck (kein shape-Feld). */
+export type PieceShape = 'viertelkreis';
+
 /** Eine platzierte Platte im Grundriss, in Metern, Ursprung oben-links. */
 export interface PanelInstance {
   x: number;
@@ -32,6 +35,8 @@ export interface PanelInstance {
   /** Nur gesetzt für das echte Dreieckpodest — siehe Piece2D.corner in customShape.ts für die
    *  volle Erklärung (insb. die (1,1)-Mehrdeutigkeit mit dem echten 1×1-Rechteck). */
   corner?: TriangleCorner;
+  /** Form des Stücks — undefined = normales Rechteck. Viertelkreis gilt nur wenn corner auch gesetzt ist. */
+  shape?: PieceShape;
 }
 
 export interface LayoutResult {

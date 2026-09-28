@@ -74,6 +74,19 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
   const offsetY = drawableY + (drawableH - drawnH) / 2 - box.y * scale;
 
   for (const p of layout.panels) {
+    if (p.corner !== undefined && p.shape === 'viertelkreis') {
+      // Quarter-circle: export as rectangle (limitation of PPTX shapes;
+      // 2D and 3D views show the correct curved shape)
+      slide.addShape('rect', {
+        x: offsetX + p.x * scale,
+        y: offsetY + p.y * scale,
+        w: p.w * scale,
+        h: p.d * scale,
+        fill: { color: PANEL_FILL },
+        line: { color: PANEL_LINE, width: 1 },
+      });
+      continue;
+    }
     if (p.corner !== undefined) {
       slide.addShape('rtTriangle', {
         x: offsetX + p.x * scale,

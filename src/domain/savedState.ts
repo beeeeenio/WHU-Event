@@ -1,8 +1,8 @@
 import { makePieceId, reservePieceIds, type Piece2D } from './customShape';
 import { STRUCTURE_RULES } from './rules';
-import { TRIANGLE_PANEL_SIZE_M } from './panels';
+import { isCatalogTriangleBox } from './panels';
 import { SPINDEL_HEIGHT_OPTIONS_CM } from './tresen';
-import type { TriangleCorner } from './types';
+import type { PieceShape, TriangleCorner } from './types';
 
 /**
  * Gespeicherter Zustand einer Kastenbühne — wird als JSON exportiert/importiert.
@@ -23,6 +23,7 @@ export interface TresenSavedState {
 }
 
 const VALID_CORNERS: readonly TriangleCorner[] = ['tl', 'tr', 'bl', 'br'];
+const VALID_SHAPES: readonly PieceShape[] = ['viertelkreis'];
 
 /** Prüft ob ein Wert eine gültige Stück-Geometrie darstellt — noch nicht mit id überprüft. */
 export function isValidPieceGeometry(p: unknown): p is Omit<Piece2D, 'id'> {
@@ -32,9 +33,16 @@ export function isValidPieceGeometry(p: unknown): p is Omit<Piece2D, 'id'> {
   if (typeof v?.w !== 'number' || !isFinite(v.w)) return false;
   if (typeof v?.d !== 'number' || !isFinite(v.d)) return false;
   if (v.w <= 0 || v.d <= 0) return false;
+
+  // Shape-Feld und corner-Feld gehören zusammen
+  if (v.shape !== undefined && v.corner === undefined) return false;
+  if (v.shape !== undefined && !VALID_SHAPES.includes(v.shape)) return false;
+
   if (v.corner !== undefined) {
     if (!VALID_CORNERS.includes(v.corner)) return false;
-    if (v.w !== TRIANGLE_PANEL_SIZE_M || v.d !== TRIANGLE_PANEL_SIZE_M) return false;
+    // Katalog-Dreieck-Größen: 1×1, 2×1, oder 1×2
+    if (!isCatalogTriangleBox(v.w, v.d)) return false;
+    // Wenn shape gesetzt ist, muss es ein gültiger Wert sein (schon oben geprüft)
   }
   return true;
 }

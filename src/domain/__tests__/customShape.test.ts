@@ -9,6 +9,7 @@ import {
   findFreePosition,
   fitsAllAt,
   fitsAt,
+  mirrorPieceInPlace,
   normalizeToOrigin,
   rotatePieceInPlace,
   shiftPieces,
@@ -23,6 +24,14 @@ function piece(id: string, x: number, y: number, w: number, d: number): Piece2D 
 
 function trianglePiece(id: string, x: number, y: number, corner: TriangleCorner): Piece2D {
   return { id, x, y, w: 1, d: 1, corner };
+}
+
+function quarterCirclePiece(id: string, x: number, y: number, corner: TriangleCorner): Piece2D {
+  return { id, x, y, w: 1, d: 1, corner, shape: 'viertelkreis' };
+}
+
+function triangle2x1(id: string, x: number, y: number, w: number, d: number, corner: TriangleCorner): Piece2D {
+  return { id, x, y, w, d, corner };
 }
 
 describe('fitsAt', () => {
@@ -155,6 +164,22 @@ describe('buildLayoutFromPieces', () => {
     expect(layout.panels.find((p) => p.corner === 'tl')?.isSondermass).toBe(false);
     expect(layout.panels.find((p) => p.corner === undefined)?.isSondermass).toBe(true);
   });
+
+  it('behält bei einem Viertelkreis-Podest die Ecke und shape bei und nutzt den eigenen Schlüssel', () => {
+    const layout = buildLayoutFromPieces([quarterCirclePiece('a', 0, 0, 'tl')]);
+    expect(layout.panels).toHaveLength(1);
+    expect(layout.panels[0].corner).toBe('tl');
+    expect(layout.panels[0].shape).toBe('viertelkreis');
+    const keys = Object.keys(layout.panelCountsBySize);
+    expect(keys).toHaveLength(1);
+    expect(keys[0]).toBe('viertelkreis-r1');
+  });
+
+  it('berechnet die Fläche eines Viertelkreises korrekt als π*r²/4 ≈ 0.785', () => {
+    const layout = buildLayoutFromPieces([quarterCirclePiece('a', 0, 0, 'tl')]);
+    const expected = (Math.PI * 1 * 1) / 4;
+    expect(layout.areaM2).toBeCloseTo(expected, 3);
+  });
 });
 
 describe('fillHorizontalSpan / fillVerticalSpan', () => {
@@ -243,6 +268,68 @@ describe('wedgePiecesAt / defaultWedgeTemplate', () => {
     }
     expect(pieces.some((p) => p.w === 0.5)).toBe(true);
   });
+
+describe('rotatePieceInPlace / mirrorPieceInPlace — Phase 6', () => {
+  it('rotatePieceInPlace auf 2×1 Dreieck: taucht w/d und wechselt corner', () => {
+    const tri = triangle2x1('a', 0, 0, 2, 1, 'tl');
+    const rotated = rotatePieceInPlace(tri);
+    expect(rotated.corner).toBe('tr');
+    expect(rotated.w).toBe(1);
+    expect(rotated.d).toBe(2);
+  });
+
+  it('rotatePieceInPlace 4x auf 2×1 Dreieck kehrt zur ursprünglichen Form zurück', () => {
+    const tri = triangle2x1('a', 0, 0, 2, 1, 'tl');
+    let current = tri;
+    for (let i = 0; i < 4; i++) current = rotatePieceInPlace(current);
+    expect(current.corner).toBe('tl');
+    expect(current.w).toBe(2);
+    expect(current.d).toBe(1);
+  });
+
+  it('mirrorPieceInPlace auf 2×1 Dreieck: taucht w/d und spiegelt corner diagonal', () => {
+    const tri = triangle2x1('a', 0, 0, 2, 1, 'tl');
+    const mirrored = mirrorPieceInPlace(tri);
+    expect(mirrored.w).toBe(1);
+    expect(mirrored.d).toBe(2);
+    expect(mirrored.corner).toBe('tl'); // tl bleibt tl nach Diagonalspiegelung
+  });
+
+  it('mirrorPieceInPlace 2x auf 2×1 Dreieck kehrt zur ursprünglichen Form zurück', () => {
+    const tri = triangle2x1('a', 0, 0, 2, 1, 'tr');
+    let current = tri;
+    current = mirrorPieceInPlace(current);
+    current = mirrorPieceInPlace(current);
+    expect(current.corner).toBe('tr');
+    expect(current.w).toBe(2);
+    expect(current.d).toBe(1);
+  });
+
+  it('mirrorPieceInPlace auf 1×1 Dreieck ändert nichts', () => {
+    const tri = trianglePiece('a', 0, 0, 'tl');
+    const mirrored = mirrorPieceInPlace(tri);
+    expect(mirrored).toEqual(tri);
+  });
+});
+
+describe('buildLayoutFromPieces — Phase 6', () => {
+  it('getrennte linke und rechte 2×1-Dreieck-Zählung', () => {
+    const layout = buildLayoutFromPieces([
+      triangle2x1('a', 0, 0, 2, 1, 'tl'),
+      triangle2x1('b', 2, 0, 2, 1, 'tr'),
+      triangle2x1('c', 4, 0, 2, 1, 'tl'),
+    ]);
+    expect(Object.keys(layout.panelCountsBySize)).toHaveLength(2);
+    const leftCount = layout.panelCountsBySize['dreieck-2x1-links'];
+    const rightCount = layout.panelCountsBySize['dreieck-2x1-rechts'];
+    expect(leftCount + rightCount).toBe(3);
+  });
+
+  it('Fläche eines 2×1-Dreiecks ist 1 m² (halbe 2×1-Box)', () => {
+    const layout = buildLayoutFromPieces([triangle2x1('a', 0, 0, 2, 1, 'tl')]);
+    expect(layout.areaM2).toBeCloseTo(1, 3);
+  });
+});
 
   it('liefert eine leere Liste ohne Reihen oder Breite', () => {
     expect(wedgePiecesAt({ baseWidthM: 6, rowCount: 0, pieceDepthM: 1 }, 0, 0)).toHaveLength(0);

@@ -1,7 +1,13 @@
 import { countHorizontalBraces } from './bracing';
 import { boundingBoxOf } from './customShape';
 import { countFeet } from './feet';
-import { articleNumberFor, TRIANGLE_SIZE_KEY } from './panels';
+import {
+  articleNumberFor,
+  QUARTER_CIRCLE_SIZE_KEY,
+  TRIANGLE_2X1_LEFT_KEY,
+  TRIANGLE_2X1_RIGHT_KEY,
+  TRIANGLE_SIZE_KEY,
+} from './panels';
 import { isBracingRequired, isHorizontalBracingRequired } from './rules';
 import type { LayoutResult, MaterialListItem, RailingSide, StructureTypeId } from './types';
 
@@ -76,6 +82,40 @@ export function buildMaterialList({
         gruppe: 'PLATTEN',
         artikel: 'Systempodest, Dreieck 1×1 m (rechtwinklig)',
         artikelNr: '112 05 0',
+        menge: layout.panelCountsBySize[key],
+        einheit: 'Stk.',
+      });
+      continue;
+    }
+    if (key === QUARTER_CIRCLE_SIZE_KEY) {
+      // Viertelkreis-Podest: kein Katalog-Artikel, nur Materiallisten-Name
+      items.push({
+        pos: pos++,
+        gruppe: 'PLATTEN',
+        artikel: 'Systempodest, Viertelkreis R 1 m',
+        artikelNr: undefined,
+        menge: layout.panelCountsBySize[key],
+        einheit: 'Stk.',
+      });
+      continue;
+    }
+    if (key === TRIANGLE_2X1_LEFT_KEY) {
+      items.push({
+        pos: pos++,
+        gruppe: 'PLATTEN',
+        artikel: 'Systempodest, Dreieck 2×1 m links',
+        artikelNr: undefined,
+        menge: layout.panelCountsBySize[key],
+        einheit: 'Stk.',
+      });
+      continue;
+    }
+    if (key === TRIANGLE_2X1_RIGHT_KEY) {
+      items.push({
+        pos: pos++,
+        gruppe: 'PLATTEN',
+        artikel: 'Systempodest, Dreieck 2×1 m rechts',
+        artikelNr: undefined,
         menge: layout.panelCountsBySize[key],
         einheit: 'Stk.',
       });

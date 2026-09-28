@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { boundingBoxOf } from '../../domain/customShape';
 import type { LabeledFootPosition } from '../../domain/feet';
 import { footColorForHeight } from '../../domain/footColorScale';
-import { trianglePoints } from '../../domain/triangle';
+import { quarterCirclePath, trianglePoints } from '../../domain/triangle';
 import type { LayoutResult, RailingSide } from '../../domain/types';
 import { formatMeters } from '../../lib/format';
 
@@ -90,7 +90,14 @@ export function FloorPlanSVG({
         const isTriangle = p.corner !== undefined;
         return (
           <g key={i}>
-            {isTriangle ? (
+            {isTriangle && p.shape === 'viertelkreis' ? (
+              <path
+                d={quarterCirclePath(p, p.corner!)}
+                fill={`url(#fps-hatch-${uid})`}
+                stroke="var(--color-panel-stroke)"
+                strokeWidth={0.03}
+              />
+            ) : isTriangle ? (
               <polygon
                 points={trianglePoints(p, p.corner!)
                   .map((pt) => `${pt.x},${pt.y}`)

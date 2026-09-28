@@ -22,10 +22,13 @@ interface CornerContribution extends RoledCorner {
   panelNr: number;
 }
 
-/** Ein Rechteck hat 4 Fuß-taugliche Ecken (unverändertes Verhalten). Ein Dreieckpodest
+/** Ein Rechteck hat 4 Fuß-taugliche Ecken (unverändertes Verhalten). Ein Dreieck- oder Viertelkreis-Podest
  *  (p.corner gesetzt) hat nur 3 echte Ecken — die eine "Phantom"-Ecke ohne Material bekommt
  *  hier keinen Fuß (kann aber trotzdem einen haben, wenn ein NACHBAR-Stück dort selbst eine
- *  echte Ecke hat — das ergibt sich automatisch, da jedes Panel seine eigenen Ecken beisteuert). */
+ *  echte Ecke hat — das ergibt sich automatisch, da jedes Panel seine eigenen Ecken beisteuert).
+ *  Viertelkreis-Behandlung: geometrisch ähnlich zum Dreieck, mit Mittelpunkt + 2 Bogenenden = 3 Ecken,
+ *  Phantom-Ecke diagonal gegenüber — wird wie ein Dreieck mit 3 Fußaufnahmen behandelt (nicht aus dem Katalog,
+ *  reine Annahme basierend auf dem geometrischen Prinzip). */
 function cornersWithRole(p: PanelInstance): RoledCorner[] {
   const all: Record<CornerRole, { x: number; y: number }> = {
     tl: { x: p.x, y: p.y },

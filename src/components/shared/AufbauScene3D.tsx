@@ -188,12 +188,6 @@ function insetPolygon(pts: Array<{ x: number; y: number }>, t: number): Array<{ 
   });
 }
 
-/** Die (u,v)-Punkte je Ausrichtung — identisch zur bisherigen Dreieck-Konstruktion, mit Fugen-Inset. */
-function triangleUV(corner: TriangleCorner): Array<{ x: number; y: number }> {
-  const raw = trianglePoints({ x: 0, y: 0, w: 1, d: 1 }, corner).map((pt) => ({ x: pt.x, y: -pt.y }));
-  return insetPolygon(raw, PANEL_GAP_M / 2);
-}
-
 function shapeFrom(pts: Array<{ x: number; y: number }>): THREE.Shape {
   const s = new THREE.Shape();
   pts.forEach((p, i) => (i === 0 ? s.moveTo(p.x, p.y) : s.lineTo(p.x, p.y)));
@@ -201,19 +195,73 @@ function shapeFrom(pts: Array<{ x: number; y: number }>): THREE.Shape {
   return s;
 }
 
-/** Rahmen = Außenkontur mit Loch (Innenkontur); Belag = Innenkontur. Je 4 Ausrichtungen, einmal gecacht. */
-const TRIANGLE_FRAME_SHAPES = {} as Record<TriangleCorner, THREE.Shape>;
-const TRIANGLE_INFILL_SHAPES = {} as Record<TriangleCorner, THREE.Shape>;
-for (const corner of ['tl', 'tr', 'bl', 'br'] as TriangleCorner[]) {
-  const outer = triangleUV(corner);
+/** Shape-Cache keyed by (kind, corner, w, d) — Rahmen und Belag je Größe/Orientierung.
+ *  Kind: 'dreieck' oder 'viertelkreis', corner = Ecke, w/d = Bounding-Box-Maße in Metern.
+ *  Format: `${kind}|${corner}|${w.toFixed(3)}|${d.toFixed(3)}` */
+const SHAPE_CACHE = new Map<string, { frame: THREE.Shape; infill: THREE.Shape }>();
+
+function getCachedShapes(kind: 'dreieck' | 'viertelkreis', corner: TriangleCorner, w: number, d: number) {
+  const key = `${kind}|${corner}|${w.toFixed(3)}|${d.toFixed(3)}`;
+  let cached = SHAPE_CACHE.get(key);
+  if (cached) return cached;
+
+  let outer: Array<{ x: number; y: number }>;
+
+  if (kind === 'viertelkreis') {
+    // Viertelkreis: Mittelpunkt (0,0), Radius = w = d
+    // Bogen von (w,0) zu (0,w), dann zurück zu (0,0)
+    const radius = w;
+    const centerPoints: Record<TriangleCorner, { x: number; y: number }> = {
+      tl: { x: 0, y: 0 },
+      tr: { x: w, y: 0 },
+      bl: { x: 0, y: d },
+      br: { x: w, y: d },
+    };
+    const center = centerPoints[corner];
+
+    // Berechne die beiden Enden des Bogens basierend auf der Ecke
+    const points: Record<TriangleCorner, { start: { x: number; y: number }; end: { x: number; y: number } }> = {
+      tl: { start: { x: w, y: 0 }, end: { x: 0, y: d } },
+      tr: { start: { x: 0, y: 0 }, end: { x: w, y: d } },
+      bl: { start: { x: w, y: d }, end: { x: 0, y: 0 } },
+      br: { start: { x: 0, y: d }, end: { x: w, y: 0 } },
+    };
+    const { start, end } = points[corner];
+
+    // Approx. Bogen mit 8 Segmenten. Startet am Mittelpunkt (die Ecke mit dem rechten Winkel),
+    // läuft über die erste Radiuskante zum Bogen, entlang des Bogens, und zurück über die zweite
+    // Radiuskante — sonst fehlt die Mittelpunkt-Ecke und es entsteht nur eine Sehne/Mondsichel
+    // statt eines echten Viertelkreis-Tortenstücks.
+    const segments = 8;
+    const arc: Array<{ x: number; y: number }> = [center, start];
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    const endAngle = Math.atan2(end.y - center.y, end.x - center.x);
+    let angle = startAngle;
+    const angleDelta = (endAngle - startAngle) / segments;
+    for (let i = 1; i <= segments; i++) {
+      angle += angleDelta;
+      arc.push({
+        x: center.x + radius * Math.cos(angle),
+        y: center.y + radius * Math.sin(angle),
+      });
+    }
+    outer = insetPolygon(arc, PANEL_GAP_M / 2);
+  } else {
+    // Dreieck: skaliert auf w×d (von 1×1)
+    const raw = trianglePoints({ x: 0, y: 0, w, d }, corner).map((pt) => ({ x: pt.x, y: -pt.y }));
+    outer = insetPolygon(raw, PANEL_GAP_M / 2);
+  }
+
   const inner = insetPolygon(outer, FRAME_WIDTH_M);
   const frame = shapeFrom(outer);
   const hole = new THREE.Path();
   inner.forEach((p, i) => (i === 0 ? hole.moveTo(p.x, p.y) : hole.lineTo(p.x, p.y)));
   hole.closePath();
   frame.holes.push(hole);
-  TRIANGLE_FRAME_SHAPES[corner] = frame;
-  TRIANGLE_INFILL_SHAPES[corner] = shapeFrom(inner);
+
+  const result = { frame, infill: shapeFrom(inner) };
+  SHAPE_CACHE.set(key, result);
+  return result;
 }
 
 /** Ein Fuß: Fußplatte → Gewindespindel → Stellmutter → Innenrohr → Außenhülse mit Höhen-Farbring. */
@@ -493,16 +541,20 @@ export function AufbauScene3D({ tiers, onCanvasReady }: Props) {
                       d={p.d}
                       infillColor={p.isSondermass ? SONDERMASS_INFILL_COLOR : (tier.panelColor ?? DEFAULT_INFILL_COLOR)}
                     />
-                  ) : (
-                    <group key={i} position={[p.x + offsetX, deckY, p.y + offsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
-                      <mesh material={FRAME_MATERIAL_X} castShadow receiveShadow>
-                        <extrudeGeometry args={[TRIANGLE_FRAME_SHAPES[p.corner], { depth: PANEL_THICKNESS_M, bevelEnabled: false }]} />
-                      </mesh>
-                      <mesh material={infillMaterial(tier.panelColor ?? DEFAULT_INFILL_COLOR, 1 / HEX_TILE_M, 1 / HEX_TILE_M)} castShadow receiveShadow>
-                        <extrudeGeometry args={[TRIANGLE_INFILL_SHAPES[p.corner], { depth: PANEL_THICKNESS_M - INFILL_RECESS_M, bevelEnabled: false }]} />
-                      </mesh>
-                    </group>
-                  ),
+                  ) : (() => {
+                    const kind = p.shape === 'viertelkreis' ? 'viertelkreis' : 'dreieck';
+                    const shapes = getCachedShapes(kind, p.corner, p.w, p.d);
+                    return (
+                      <group key={i} position={[p.x + offsetX, deckY, p.y + offsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
+                        <mesh material={FRAME_MATERIAL_X} castShadow receiveShadow>
+                          <extrudeGeometry args={[shapes.frame, { depth: PANEL_THICKNESS_M, bevelEnabled: false }]} />
+                        </mesh>
+                        <mesh material={infillMaterial(tier.panelColor ?? DEFAULT_INFILL_COLOR, 1 / HEX_TILE_M, 1 / HEX_TILE_M)} castShadow receiveShadow>
+                          <extrudeGeometry args={[shapes.infill, { depth: PANEL_THICKNESS_M - INFILL_RECESS_M, bevelEnabled: false }]} />
+                        </mesh>
+                      </group>
+                    );
+                  })(),
                 )}
 
                 {tier.feet.map((f, i) => (

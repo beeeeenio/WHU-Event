@@ -40,4 +40,25 @@ describe('countHorizontalBraces', () => {
     // die EINE geteilte Kante (0,0)-(1,0) — macht 5, nicht 2+4=6 (die Dedup-Ersparnis von 1).
     expect(braces).toEqual([{ lengthMm: 1000, count: 5 }]);
   });
+
+  it('ein einzelnes Viertelkreis-Podest (1×1, Mittelpunkt oben-links): nur die 2 echten Katheten, keine Hypotenuse', () => {
+    const quarterCircle: PanelInstance = {
+      x: 0, y: 0, w: 1, d: 1,
+      sizeKey: 'viertelkreis-r1', isSondermass: false,
+      corner: 'tl', shape: 'viertelkreis'
+    };
+    const braces = countHorizontalBraces([quarterCircle]);
+    // Beide Katheten sind 1 m lang — zusammengefasst zu einem Eintrag (wie beim Dreieck).
+    expect(braces).toEqual([{ lengthMm: 1000, count: 2 }]);
+  });
+
+  it('ein 1.5×0.75 m Sondermaß-Rechteck: 2 Horizontalen à 1500 mm, 2 Horizontalen à 750 mm', () => {
+    const panel: PanelInstance = { x: 0, y: 0, w: 1.5, d: 0.75, sizeKey: '1.5x0.75', isSondermass: true };
+    const braces = countHorizontalBraces([panel]);
+    // Rechteck: 2 Kanten à 1.5 m (oben/unten) + 2 Kanten à 0.75 m (links/rechts)
+    expect(braces).toEqual([
+      { lengthMm: 1500, count: 2 },
+      { lengthMm: 750, count: 2 },
+    ]);
+  });
 });

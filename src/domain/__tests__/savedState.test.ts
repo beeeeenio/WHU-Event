@@ -291,14 +291,14 @@ describe('savedState', () => {
       expect(result[0].id).toBe('piece-1');
     });
 
-    it('drops 2×1 triangles (only 1×1 triangles are valid)', () => {
+    it('accepts both 1×1 and 2×1 triangles with corner (Phase 6)', () => {
       const pieces = [
-        { id: 'piece-1', x: 0, y: 0, w: 1, d: 1, corner: 'tl' }, // valid triangle
-        { id: 'piece-2', x: 1, y: 0, w: 2, d: 1, corner: 'tl' }, // invalid: 2×1 but has corner
+        { id: 'piece-1', x: 0, y: 0, w: 1, d: 1, corner: 'tl' }, // valid 1×1 triangle
+        { id: 'piece-2', x: 1, y: 0, w: 2, d: 1, corner: 'tl' }, // valid 2×1 triangle
+        { id: 'piece-3', x: 2, y: 0, w: 1, d: 2, corner: 'tl' }, // valid 1×2 triangle
       ];
       const result = sanitizePieces(pieces as any[]);
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('piece-1');
+      expect(result).toHaveLength(3);
     });
 
     it('keeps pieces with negative x/y', () => {
@@ -357,14 +357,39 @@ describe('savedState', () => {
       expect(isValidPieceGeometry(piece as any)).toBe(false);
     });
 
-    it('rejects triangle with non-1×1 dimensions', () => {
+    it('accepts 2×1 triangle with corner (new in Phase 6)', () => {
       const piece = { x: 0, y: 0, w: 2, d: 1, corner: 'tl' };
+      expect(isValidPieceGeometry(piece as any)).toBe(true);
+    });
+
+    it('accepts 1×2 triangle with corner (rotated 2×1)', () => {
+      const piece = { x: 0, y: 0, w: 1, d: 2, corner: 'tl' };
+      expect(isValidPieceGeometry(piece as any)).toBe(true);
+    });
+
+    it('rejects triangle with invalid dimensions', () => {
+      const piece = { x: 0, y: 0, w: 2, d: 2, corner: 'tl' };
       expect(isValidPieceGeometry(piece as any)).toBe(false);
     });
 
     it('accepts pieces with negative x/y', () => {
       const piece = { x: -1, y: -0.5, w: 2, d: 1 };
       expect(isValidPieceGeometry(piece)).toBe(true);
+    });
+
+    it('accepts a valid quarter-circle piece', () => {
+      const piece = { x: 0, y: 0, w: 1, d: 1, corner: 'tl', shape: 'viertelkreis' };
+      expect(isValidPieceGeometry(piece)).toBe(true);
+    });
+
+    it('rejects quarter-circle without corner', () => {
+      const piece = { x: 0, y: 0, w: 1, d: 1, shape: 'viertelkreis' };
+      expect(isValidPieceGeometry(piece as any)).toBe(false);
+    });
+
+    it('rejects quarter-circle with invalid shape value', () => {
+      const piece = { x: 0, y: 0, w: 1, d: 1, corner: 'tl', shape: 'kreis' };
+      expect(isValidPieceGeometry(piece as any)).toBe(false);
     });
   });
 

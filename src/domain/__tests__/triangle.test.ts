@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextTriangleCorner, phantomCorner, trianglePoints } from '../triangle';
+import { nextTriangleCorner, phantomCorner, quarterCirclePath, triangleHand, trianglePoints } from '../triangle';
 import type { TriangleCorner } from '../types';
 
 describe('phantomCorner', () => {
@@ -45,5 +45,80 @@ describe('nextTriangleCorner', () => {
       for (let i = 0; i < 4; i++) c = nextTriangleCorner(c);
       expect(c).toBe(start);
     }
+  });
+});
+
+describe('quarterCirclePath', () => {
+  // Viertelkreis mit Radius 1m, Bounding-Box 1×1 m
+  const piece = { x: 0, y: 0, w: 1, d: 1 };
+
+  it('generiert einen SVG-Pfad für corner=tl (Mittelpunkt oben-links, Bogen nach unten-rechts)', () => {
+    // corner=tl: Mittelpunkt (0,0), Endpunkte (1,0) und (0,1)
+    const path = quarterCirclePath(piece, 'tl');
+    expect(path).toBe('M 0 0 L 1 0 A 1 1 0 0 1 0 1 Z');
+  });
+
+  it('generiert einen SVG-Pfad für corner=tr (Mittelpunkt oben-rechts, Bogen nach unten-links)', () => {
+    // corner=tr: Mittelpunkt (1,0), Endpunkte (0,0) und (1,1)
+    const path = quarterCirclePath(piece, 'tr');
+    expect(path).toBe('M 1 0 L 0 0 A 1 1 0 0 1 1 1 Z');
+  });
+
+  it('generiert einen SVG-Pfad für corner=bl (Mittelpunkt unten-links, Bogen nach oben-rechts)', () => {
+    // corner=bl: Mittelpunkt (0,1), Endpunkte (0,0) und (1,1)
+    const path = quarterCirclePath(piece, 'bl');
+    expect(path).toBe('M 0 1 L 0 0 A 1 1 0 0 1 1 1 Z');
+  });
+
+  it('generiert einen SVG-Pfad für corner=br (Mittelpunkt unten-rechts, Bogen nach oben-links)', () => {
+    // corner=br: Mittelpunkt (1,1), Endpunkte (1,0) und (0,1)
+    const path = quarterCirclePath(piece, 'br');
+    expect(path).toBe('M 1 1 L 1 0 A 1 1 0 0 1 0 1 Z');
+  });
+
+  it('verschiebt den Pfad korrekt für ein Stück, das nicht am Ursprung liegt', () => {
+    const offsetPiece = { x: 5, y: 4, w: 1, d: 1 };
+    const path = quarterCirclePath(offsetPiece, 'tl');
+    expect(path).toBe('M 5 4 L 6 4 A 1 1 0 0 1 5 5 Z');
+  });
+});
+
+describe('triangleHand — 2×1 Dreiecke', () => {
+  it('rechts = (diagonale Ecke AND wide) OR (off-diagonal AND narrow)', () => {
+    // tl (diagonal), 2×1 (wide) → rechts
+    expect(triangleHand('tl', 2, 1)).toBe('rechts');
+    // tr (off-diagonal), 1×2 (narrow) → rechts (nach einer Rotation von oben)
+    expect(triangleHand('tr', 1, 2)).toBe('rechts');
+    // br (diagonal), 2×1 (wide) → rechts (nach zwei Rotationen)
+    expect(triangleHand('br', 2, 1)).toBe('rechts');
+  });
+
+  it('links = (diagonale Ecke AND narrow) OR (off-diagonal AND wide)', () => {
+    expect(triangleHand('tl', 1, 2)).toBe('links');
+    expect(triangleHand('tr', 2, 1)).toBe('links');
+    expect(triangleHand('bl', 2, 1)).toBe('links');
+  });
+
+  it('1×1 Dreiecke: Händigkeit hängt nur vom corner ab (da w === d)', () => {
+    // Für 1×1 ist w === d, also isWide=false. Die Händigkeit hängt davon ab, ob corner auf Diagonale liegt
+    expect(triangleHand('tl', 1, 1)).toBe('links'); // onDiagonal=true, isWide=false → false
+    expect(triangleHand('tr', 1, 1)).toBe('rechts'); // onDiagonal=false, isWide=false → true
+    expect(triangleHand('bl', 1, 1)).toBe('rechts'); // onDiagonal=false, isWide=false → true
+    expect(triangleHand('br', 1, 1)).toBe('links'); // onDiagonal=true, isWide=false → false
+  });
+
+  it('Rotation eines 2×1-Dreiecks erhält die Händigkeit nach einem vollen Zyklus', () => {
+    // Starte mit 'rechts' bei corner=tl, w=2, d=1
+    let corner: TriangleCorner = 'tl';
+    let w = 2;
+    let d = 1;
+    const startHand = triangleHand(corner, w, d);
+
+    // 4 rotationen: each rotation changes corner and swaps w/d
+    for (let i = 0; i < 4; i++) {
+      corner = nextTriangleCorner(corner);
+      [w, d] = [d, w];
+    }
+    expect(triangleHand(corner, w, d)).toBe(startHand);
   });
 });

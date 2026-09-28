@@ -6,6 +6,17 @@ function triangle(x: number, y: number, corner: PanelInstance['corner']): PanelI
   return { x, y, w: 1, d: 1, sizeKey: 'dreieck-1x1', isSondermass: false, corner };
 }
 
+function triangle2x1(x: number, y: number, corner: PanelInstance['corner'], hand: 'links' | 'rechts'): PanelInstance {
+  const sizeKey = hand === 'links' ? 'dreieck-2x1-links' : 'dreieck-2x1-rechts';
+  const w = corner === 'tl' || corner === 'br' ? 2 : 1;
+  const d = corner === 'tl' || corner === 'br' ? 1 : 2;
+  return { x, y, w, d, sizeKey, isSondermass: false, corner };
+}
+
+function quarterCircle(x: number, y: number, corner: PanelInstance['corner']): PanelInstance {
+  return { x, y, w: 1, d: 1, sizeKey: 'viertelkreis-r1', isSondermass: false, corner, shape: 'viertelkreis' };
+}
+
 function rect(x: number, y: number, w: number, d: number): PanelInstance {
   return { x, y, w, d, sizeKey: `${w}x${d}`, isSondermass: false };
 }
@@ -120,6 +131,70 @@ describe('labeledFootPositions — Dreieckpodest', () => {
     const a = rect(0, 0, 2, 1);
     const b = rect(2, 0, 2, 1); // volle gemeinsame Kante bei x=2
     expect(countFeet([a, b])).toBe(6); // 4+4 minus 2 geteilte Punkte, nicht 8
+  });
+});
+
+describe('countFeet — Viertelkreis-Podest', () => {
+  it('ein einzelner Viertelkreis hat genau 3 Füße (wie ein Dreieck)', () => {
+    expect(countFeet([quarterCircle(0, 0, 'tl')])).toBe(3);
+  });
+
+  it('Viertelkreis neben Rechteck mit geteilter echter Ecke: Dedup funktioniert weiter', () => {
+    // Viertelkreis (0,0,corner=tl) hat echte Ecken bei (0,0), (1,0), (0,1).
+    // Rechteck bei (1,0) mit w=1,d=1 hat dort seine tl-Ecke — derselbe Punkt
+    const panels = [quarterCircle(0, 0, 'tl'), rect(1, 0, 1, 1)];
+    // Unabhängig wären es 3 (Viertelkreis) + 4 (Rechteck) = 7 — geteilte Punkte sparen.
+    expect(countFeet(panels)).toBe(6);
+  });
+
+  it('Viertelkreis und Rechteck, die eine Kante teilen', () => {
+    // Viertelkreis unten unter einem Rechteck
+    // Viertelkreis (0,1,corner=tl): echte Ecken bei (0,1), (1,1), (0,2)
+    // Rechteck (0,0,1,1): Ecken bei (0,0), (1,0), (0,1), (1,1)
+    // Geteilte Punkte: (0,1) und (1,1)
+    const panels = [rect(0, 0, 1, 1), quarterCircle(0, 1, 'tl')];
+    // Rect: 4 Ecken, Viertelkreis: 3 Ecken (Phantom-Ecke bei (1,2) ist frei)
+    // Geteilte Punkte: (0,1), (1,1) — das sind 2 Punkte, die Dedup spart 2 Füße
+    // Unabhängig: 4 + 3 = 7, mit Dedup 2 Punkte weniger = 5
+    expect(countFeet(panels)).toBe(5);
+  });
+});
+
+describe('countFeet — 2×1 Dreieck-Podeste', () => {
+  it('ein 2×1-Dreieck (corner=tl, w=2, d=1) hat genau 3 Füße (wie ein Dreieck)', () => {
+    expect(countFeet([triangle2x1(0, 0, 'tl', 'rechts')])).toBe(3);
+  });
+
+  it('Dreieck 2×1 und Rechteck 2×1 mit geteilter Kante', () => {
+    // Dreieck (0,0,corner=tl,w=2,d=1): echte Ecken bei (0,0), (2,0), (0,1) — Phantom bei (2,1)
+    // Rechteck (0,1,2,1): Ecken bei (0,1), (2,1), (0,2), (2,2)
+    // Geteilte Punkte: (0,1) und (2,1) — aber (0,1) ist echte Ecke des Dreiecks, (2,1) ist Phantom
+    const panels = [triangle2x1(0, 0, 'tl', 'rechts'), rect(0, 1, 2, 1)];
+    // Eindeutige Ecken: (0,0), (2,0), (0,1), (2,1), (0,2), (2,2) = 6 Füße
+    expect(countFeet(panels)).toBe(6);
+  });
+});
+
+describe('countFeet — Stapelung mit Fugen-Dedup', () => {
+  it('drei 2×0.39m Stücke bündig gestapelt (y=0, 0.39, 0.78) — 2 Spalten × 4 Reihen Grid', () => {
+    // Jedes Stück hat 4 Ecken; sie sind in 2 Spalten × 4 Reihen angeordnet
+    // Spalten bei x=0,2 / Reihen bei y=0, 0.39, 0.78, 1.17
+    // Eindeutige Ecken: 2 Spalten × 4 Reihen = 8 eindeutige Punkte
+    const panels = [
+      rect(0, 0, 2, 0.39),
+      rect(0, 0.39, 2, 0.39),
+      rect(0, 0.78, 2, 0.39),
+    ];
+    expect(countFeet(panels)).toBe(8);
+  });
+
+  it('2×0.75 direkt über 2×1 gestapelt (bündig) — geteilt kante', () => {
+    // Rechteck 2×1 unten (0,0): Ecken bei (0,0), (2,0), (0,1), (2,1)
+    // Rechteck 2×0.75 oben (0,1): Ecken bei (0,1), (2,1), (0,1.75), (2,1.75)
+    // Geteilte Punkte: (0,1) und (2,1) — das sparen 2 Füße
+    const panels = [rect(0, 0, 2, 1), rect(0, 1, 2, 0.75)];
+    // Unabhängig: 4 + 4 = 8, mit Dedup: 8 - 2 = 6
+    expect(countFeet(panels)).toBe(6);
   });
 });
 

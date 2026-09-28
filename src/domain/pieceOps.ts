@@ -1,4 +1,4 @@
-import { makePieceId, rotatePieceInPlace, type FilledPiece, type Piece2D } from './customShape';
+import { makePieceId, mirrorPieceInPlace, rotatePieceInPlace, type FilledPiece, type Piece2D } from './customShape';
 
 /**
  * Appends filled pieces (without IDs) to the pieces array, assigning fresh IDs.
@@ -45,4 +45,16 @@ export function rotatePieceById(pieces: Piece2D[], id: string): Piece2D[] {
     return pieces;
   }
   return pieces.map((p) => (p.id === id ? rotatePieceInPlace(p) : p));
+}
+
+/**
+ * Mirrors a piece by ID in place (mirrors diagonal for non-square cornered pieces).
+ * Returns a new array. Returns the SAME array reference if the ID wasn't found.
+ */
+export function mirrorPieceById(pieces: Piece2D[], id: string): Piece2D[] {
+  const found = pieces.some((p) => p.id === id);
+  if (!found) {
+    return pieces;
+  }
+  return pieces.map((p) => (p.id === id ? mirrorPieceInPlace(p) : p));
 }

@@ -6,12 +6,12 @@ import {
   type FilledPiece,
   type Piece2D,
 } from '../../domain/customShape';
-import { isCatalogRect, isSondermassPiece, TRIANGLE_PANEL_SIZE_M, CATALOG_WIDTHS_M, CATALOG_DEPTHS_M } from '../../domain/panels';
-import { nextTriangleCorner, trianglePoints } from '../../domain/triangle';
+import { isCatalogRect, isSondermassPiece, TRIANGLE_PANEL_SIZE_M, QUARTER_CIRCLE_RADIUS_M, CATALOG_WIDTHS_M, CATALOG_DEPTHS_M } from '../../domain/panels';
+import { nextTriangleCorner, quarterCirclePath, triangleHand, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
 import { formatMeters } from '../../lib/format';
 
-type ToolPayload = { kind: 'piece'; w: number; d: number } | { kind: 'triangle'; corner: TriangleCorner };
+type ToolPayload = { kind: 'piece'; w: number; d: number } | { kind: 'triangle'; corner: TriangleCorner; w: number; d: number } | { kind: 'viertelkreis'; corner: TriangleCorner };
 
 interface Props {
   pieces: Piece2D[];
@@ -19,6 +19,7 @@ interface Props {
   onRemovePiece: (id: string) => void;
   onMovePiece: (id: string, x: number, y: number) => void;
   onRotatePiece: (id: string) => void;
+  onMirrorPiece?: (id: string) => void;
   /** Verschiebt alle Stücke dieses Plans gemeinsam waagerecht um dx Meter ("Alles verschieben").
    *  Wird nur aufgerufen, wenn dabei nichts links über x=0 hinausrutscht (siehe shiftPieces). */
   onShiftAll: (dx: number) => void;
@@ -61,6 +62,7 @@ interface ShapeGeometry {
   w: number;
   d: number;
   corner?: TriangleCorner;
+  shape?: string;
 }
 
 /** Rendert ein Stück (egal ob platziert, Geist beim Ziehen oder Vorschau) als `<rect>` oder,
@@ -97,6 +99,13 @@ function PieceShape({
       <rect x={piece.x} y={piece.y} width={piece.w} height={piece.d} {...shared}>
         {children}
       </rect>
+    );
+  }
+  if (piece.shape === 'viertelkreis') {
+    return (
+      <path d={quarterCirclePath(piece, piece.corner)} {...shared}>
+        {children}
+      </path>
     );
   }
   const points = trianglePoints(piece, piece.corner)
@@ -149,6 +158,7 @@ export function PieceCanvasEditor({
   onRemovePiece,
   onMovePiece,
   onRotatePiece,
+  onMirrorPiece,
   onShiftAll,
   onUndo,
   onRedo,
@@ -226,9 +236,13 @@ export function PieceCanvasEditor({
       const pos = findFreePosition(pieces, payload.w, payload.d, pointerPos.x - payload.w / 2, pointerPos.y - payload.d / 2);
       return [{ x: pos.x, y: pos.y, w: payload.w, d: payload.d }];
     }
-    const s = TRIANGLE_PANEL_SIZE_M;
-    const pos = findFreePosition(pieces, s, s, pointerPos.x - s / 2, pointerPos.y - s / 2);
-    return [{ x: pos.x, y: pos.y, w: s, d: s, corner: payload.corner }];
+    if (payload.kind === 'viertelkreis') {
+      const r = QUARTER_CIRCLE_RADIUS_M;
+      const pos = findFreePosition(pieces, r, r, pointerPos.x - r / 2, pointerPos.y - r / 2);
+      return [{ x: pos.x, y: pos.y, w: r, d: r, corner: payload.corner, shape: 'viertelkreis' }];
+    }
+    const pos = findFreePosition(pieces, payload.w, payload.d, pointerPos.x - payload.w / 2, pointerPos.y - payload.d / 2);
+    return [{ x: pos.x, y: pos.y, w: payload.w, d: payload.d, corner: payload.corner }];
   }
 
   // arm(null) beim Start eines Paletten-Ziehens sorgt dafür, dass armed/paletteDrag nie
@@ -243,10 +257,13 @@ export function PieceCanvasEditor({
     if (payload.kind === 'piece') {
       const target = findFreePosition(pieces, payload.w, payload.d, pos.x - payload.w / 2, pos.y - payload.d / 2);
       onAddPieces([{ x: target.x, y: target.y, w: payload.w, d: payload.d }]);
+    } else if (payload.kind === 'viertelkreis') {
+      const r = QUARTER_CIRCLE_RADIUS_M;
+      const target = findFreePosition(pieces, r, r, pos.x - r / 2, pos.y - r / 2);
+      onAddPieces([{ x: target.x, y: target.y, w: r, d: r, corner: payload.corner, shape: 'viertelkreis' }]);
     } else {
-      const s = TRIANGLE_PANEL_SIZE_M;
-      const target = findFreePosition(pieces, s, s, pos.x - s / 2, pos.y - s / 2);
-      onAddPieces([{ x: target.x, y: target.y, w: s, d: s, corner: payload.corner }]);
+      const target = findFreePosition(pieces, payload.w, payload.d, pos.x - payload.w / 2, pos.y - payload.d / 2);
+      onAddPieces([{ x: target.x, y: target.y, w: payload.w, d: payload.d, corner: payload.corner }]);
     }
   }
 
@@ -292,7 +309,8 @@ export function PieceCanvasEditor({
     setPaletteDrag((d) => {
       if (!d) return d;
       if (d.payload.kind === 'piece') return { ...d, payload: { kind: 'piece', w: d.payload.d, d: d.payload.w } };
-      if (d.payload.kind === 'triangle') return { ...d, payload: { kind: 'triangle', corner: nextTriangleCorner(d.payload.corner) } };
+      if (d.payload.kind === 'triangle') return { ...d, payload: { kind: 'triangle', corner: nextTriangleCorner(d.payload.corner), w: d.payload.d, d: d.payload.w } };
+      if (d.payload.kind === 'viertelkreis') return { ...d, payload: { kind: 'viertelkreis', corner: nextTriangleCorner(d.payload.corner) } };
       return d;
     });
   }
@@ -334,10 +352,12 @@ export function PieceCanvasEditor({
 
   function rotateSelected() {
     if (!selectedPiece) return;
-    // Ein Dreieck behält beim Drehen exakt seine 1×1-Bounding-Box (nur die Ecke wechselt) —
-    // kann also nie neu kollidieren, eine Prüfung ist hier unnötig (anders als beim
-    // Rechteck-Breite/Tiefe-Tausch, der die Box tatsächlich ändert).
-    if (selectedPiece.corner !== undefined) {
+    // Ein quadratisches Dreieck (1×1) oder Viertelkreis behält beim Drehen exakt seine Bounding-Box
+    // (nur die Ecke wechselt) — kann also nie neu kollidieren.
+    // Ein nicht-quadratisches Dreieck (2×1) ändert seine Box beim Drehen und muss wie ein Rechteck
+    // behandelt werden (Kollisions-Check, ggf. nachdrücken).
+    const isSquare = Math.abs(selectedPiece.w - selectedPiece.d) < 1e-6;
+    if (selectedPiece.corner !== undefined && isSquare) {
       onRotatePiece(selectedPiece.id);
       return;
     }
@@ -416,7 +436,9 @@ export function PieceCanvasEditor({
       } else if (armed?.kind === 'piece') {
         setArmedState((cur) => (cur?.kind === 'piece' ? { kind: 'piece', w: cur.d, d: cur.w } : cur));
       } else if (armed?.kind === 'triangle') {
-        setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner) } : cur));
+        setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner), w: cur.d, d: cur.w } : cur));
+      } else if (armed?.kind === 'viertelkreis') {
+        setArmedState((cur) => (cur?.kind === 'viertelkreis' ? { kind: 'viertelkreis', corner: nextTriangleCorner(cur.corner) } : cur));
       }
       return;
     }
@@ -472,8 +494,8 @@ export function PieceCanvasEditor({
     }
     if (e.key.toLowerCase() === 't') {
       e.preventDefault();
-      const payload: ToolPayload = { kind: 'triangle', corner: 'tl' };
-      arm(armed?.kind === 'triangle' ? null : payload);
+      const payload: ToolPayload = { kind: 'triangle', corner: 'tl', w: TRIANGLE_PANEL_SIZE_M, d: TRIANGLE_PANEL_SIZE_M };
+      arm(armed?.kind === 'triangle' && armed.w === TRIANGLE_PANEL_SIZE_M && armed.d === TRIANGLE_PANEL_SIZE_M ? null : payload);
     }
   }
 
@@ -498,6 +520,7 @@ export function PieceCanvasEditor({
         <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
           <span className="text-[var(--color-text)]">
             Ausgewählt: {formatMeters(selectedPiece.w, 2)}×{formatMeters(selectedPiece.d, 2)} m
+            {selectedPiece.corner !== undefined && selectedPiece.w !== selectedPiece.d && ` (${triangleHand(selectedPiece.corner, selectedPiece.w, selectedPiece.d)})`}
           </span>
           <div className="flex gap-2">
             <button
@@ -507,6 +530,15 @@ export function PieceCanvasEditor({
             >
               ⤾ Drehen
             </button>
+            {selectedPiece.corner !== undefined && selectedPiece.w !== selectedPiece.d && onMirrorPiece && (
+              <button
+                type="button"
+                onClick={() => onMirrorPiece(selectedPiece.id)}
+                className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
+              >
+                ⇋ Spiegeln
+              </button>
+            )}
             <button
               type="button"
               onClick={removeSelected}
@@ -651,7 +683,7 @@ export function PieceCanvasEditor({
           return (
             <PieceShape
               key={p.id}
-              piece={p}
+              piece={{ ...p, shape: p.shape }}
               fill={sondermass ? `url(#pce-hatch-warning-${uid})` : `url(#pce-hatch-${uid})`}
               fillOpacity={isDragTarget ? 0.25 : 1}
               stroke={selectedId === p.id ? 'var(--color-accent)' : 'var(--color-panel-stroke)'}
@@ -677,7 +709,7 @@ export function PieceCanvasEditor({
             return (
               <>
                 <PieceShape
-                  piece={{ x: drag.target.x, y: drag.target.y, w, d, corner: dragged?.corner }}
+                  piece={{ x: drag.target.x, y: drag.target.y, w, d, corner: dragged?.corner, shape: dragged?.shape }}
                   fill="var(--color-accent)"
                   fillOpacity={0.35}
                   stroke="var(--color-accent)"
@@ -811,9 +843,20 @@ export function PieceCanvasEditor({
         {armed?.kind === 'triangle' && (
           <button
             type="button"
-            onClick={() => setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner) } : cur))}
+            onClick={() => setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner), w: cur.d, d: cur.w } : cur))}
             title="Dreht das Dreieckpodest zur nächsten Ecke"
             aria-label="Dreieckpodest drehen"
+            className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
+          >
+            ⤾
+          </button>
+        )}
+        {armed?.kind === 'viertelkreis' && (
+          <button
+            type="button"
+            onClick={() => setArmedState((cur) => (cur?.kind === 'viertelkreis' ? { kind: 'viertelkreis', corner: nextTriangleCorner(cur.corner) } : cur))}
+            title="Dreht den Viertelkreis zur nächsten Ecke"
+            aria-label="Viertelkreis drehen"
             className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
           >
             ⤾
@@ -822,8 +865,8 @@ export function PieceCanvasEditor({
 
         <div className="flex items-center gap-1.5">
           {(() => {
-            const payload: ToolPayload = { kind: 'triangle', corner: 'tl' };
-            const isArmed = armed?.kind === 'triangle';
+            const payload: ToolPayload = { kind: 'triangle', corner: 'tl', w: TRIANGLE_PANEL_SIZE_M, d: TRIANGLE_PANEL_SIZE_M };
+            const isArmed = armed?.kind === 'triangle' && armed.w === TRIANGLE_PANEL_SIZE_M && armed.d === TRIANGLE_PANEL_SIZE_M;
             return (
               <button
                 type="button"
@@ -839,8 +882,8 @@ export function PieceCanvasEditor({
                   arm(isArmed ? null : payload);
                 }}
                 aria-pressed={isArmed}
-                aria-label={`Dreieckpodest ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Dreieckpodest — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten"
+                aria-label={`Dreieckpodest 1×1 m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
+                title="Dreieckpodest 1×1 m — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten"
                 className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
                   isArmed
                     ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
@@ -848,6 +891,66 @@ export function PieceCanvasEditor({
                 }`}
               >
                 <span aria-hidden>◺</span>
+              </button>
+            );
+          })()}
+          {(() => {
+            const payload: ToolPayload = { kind: 'triangle', corner: 'tl', w: 2, d: 1 };
+            const isArmed = armed?.kind === 'triangle' && armed.w === 2 && armed.d === 1;
+            return (
+              <button
+                type="button"
+                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
+                onPointerMove={handlePaletteButtonPointerMove}
+                onPointerUp={handlePaletteButtonPointerUp}
+                onKeyDown={handlePaletteButtonKeyDown}
+                onClick={() => {
+                  if (suppressNextClickRef.current) {
+                    suppressNextClickRef.current = false;
+                    return;
+                  }
+                  arm(isArmed ? null : payload);
+                }}
+                aria-pressed={isArmed}
+                aria-label={`Dreieckpodest 2×1 m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
+                title={`Dreieckpodest 2×1 m — 2×1-Katheten-Variante (aktuell: ${isArmed ? triangleHand(payload.corner, payload.w, payload.d) : '–'})`}
+                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
+                  isArmed
+                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
+                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
+                }`}
+              >
+                <span aria-hidden>◺ 2</span>
+              </button>
+            );
+          })()}
+          {(() => {
+            const payload: ToolPayload = { kind: 'viertelkreis', corner: 'tl' };
+            const isArmed = armed?.kind === 'viertelkreis';
+            return (
+              <button
+                type="button"
+                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
+                onPointerMove={handlePaletteButtonPointerMove}
+                onPointerUp={handlePaletteButtonPointerUp}
+                onKeyDown={handlePaletteButtonKeyDown}
+                onClick={() => {
+                  if (suppressNextClickRef.current) {
+                    suppressNextClickRef.current = false;
+                    return;
+                  }
+                  arm(isArmed ? null : payload);
+                }}
+                aria-pressed={isArmed}
+                aria-label={`Viertelkreis R 100 cm ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
+                title="Viertelkreis R 100 cm — gekrümmtes Podest-Element"
+                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
+                  isArmed
+                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
+                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
+                }`}
+              >
+                <span aria-hidden>◔</span>
               </button>
             );
           })()}
