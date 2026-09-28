@@ -162,7 +162,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
         <p className="text-sm text-[var(--color-text-muted)]">
           Zweistöckige Konstruktion: unten ein normales Systempodest auf LV-Füßen, darauf Verstellspindelfüße,
           darauf eine zweite Podestplatte als Thekenabschluss. Kein Regler, keine vorgefertigte Fläche — beide
-          Ebenen sind eigene, leere Pläne: ziehe Stücke oder das Freizeichnen-Werkzeug direkt drauf.
+          Ebenen sind eigene, leere Pläne: ziehe Stücke direkt drauf.
         </p>
       </section>
 

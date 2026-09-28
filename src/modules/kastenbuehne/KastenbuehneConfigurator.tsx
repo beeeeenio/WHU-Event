@@ -11,9 +11,8 @@ import { PlacedPiecesChips } from '../../components/shared/PlacedPiecesChips';
 import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { StairsRampCalculator } from '../../components/shared/StairsRampCalculator';
 import { SummaryStats } from '../../components/shared/SummaryStats';
-import { WarningBanner } from '../../components/shared/WarningBanner';
 import { buildLayoutFromPieces, normalizeToOrigin } from '../../domain/customShape';
-import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
+import { STRUCTURE_RULES } from '../../domain/rules';
 import { parseKastenbuehneFile } from '../../domain/savedState';
 import { formatMeters } from '../../lib/format';
 import { useDraftAutosave } from '../../hooks/useDraftAutosave';
@@ -39,7 +38,6 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   // Kastenbühne ist regeltechnisch eine ganz normale Bühne (gleiche Höhenserie,
   // Verstrebungs-/Geländerschwellen) — nur der Bauweg dahin ist ein anderer.
   const { totalFeet, labeledFeet, materialList } = useDerivedGeometry(layout, 'buehne', heightCm, NO_RAILING_SIDES);
-  const railingRequired = isRailingRequired('buehne', heightCm);
 
   const hasContent = layer.pieces.length > 0;
 
@@ -80,8 +78,8 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           </div>
         )}
         <p className="text-sm text-[var(--color-text-muted)]">
-          Kein Regler, keine vorgefertigte Fläche — ziehe Stücke oder das Freizeichnen-Werkzeug direkt auf einen
-          leeren Plan. Alles entsteht ausschließlich durch das, was du selbst platzierst.
+          Kein Regler, keine vorgefertigte Fläche — ziehe Stücke direkt auf einen leeren Plan. Alles entsteht
+          ausschließlich durch das, was du selbst platzierst.
         </p>
       </section>
 
@@ -103,9 +101,6 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-[var(--color-text)]">Geländer</h2>
-        {railingRequired && (
-          <WarningBanner>Ab 100 cm Aufbauhöhe ist ein Geländer laut DGUV vorgeschrieben.</WarningBanner>
-        )}
         <p className="text-sm text-[var(--color-text-muted)]">
           Bei frei zusammengestellten Formen nicht seitenweise konfigurierbar (Kontur nicht garantiert rechteckig).
         </p>

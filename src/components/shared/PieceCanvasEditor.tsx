@@ -1,26 +1,19 @@
 import { useId, useRef, useState } from 'react';
 import {
   catalogPieceOptions,
-  fillHorizontalSpan,
-  fillVerticalSpan,
   findFreePosition,
-  fitsAllAt,
   fitsAt,
   shiftPieces,
-  wedgePiecesAt,
   type CatalogPieceOption,
   type FilledPiece,
   type Piece2D,
 } from '../../domain/customShape';
 import { isSondermassPiece, TRIANGLE_PANEL_SIZE_M } from '../../domain/panels';
-import { mirrorTriangleCornerDiagonal, mirrorTriangleCornerVertical, nextTriangleCorner, trianglePoints } from '../../domain/triangle';
+import { nextTriangleCorner, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
 import { formatMeters } from '../../lib/format';
 
-type ToolPayload =
-  | { kind: 'piece'; w: number; d: number }
-  | { kind: 'draw' }
-  | { kind: 'triangle'; corner: TriangleCorner };
+type ToolPayload = { kind: 'piece'; w: number; d: number } | { kind: 'triangle'; corner: TriangleCorner };
 
 interface Props {
   pieces: Piece2D[];
@@ -56,22 +49,12 @@ const MIN_CANVAS_DEPTH_M = 4;
 const BUFFER_M = 2;
 const DRAG_THRESHOLD_PX = 4;
 const GRID_STEP_M = 0.5;
-// Ab welchem Verhältnis (kürzere Zug-Achse ÷ längere) ein Zeichnen-Zug als "schräg" statt
-// "gerade" gilt — siehe drawFillFor. 0,35 heißt: die kürzere Achse muss gut ein Drittel der
-// längeren erreichen, bevor ein Keil statt einer geraden Fläche entsteht (rein zufällige
-// Diagonal-Abweichung beim geraden Ziehen soll nicht versehentlich einen Keil auslösen).
-const DIAGONAL_RATIO_THRESHOLD = 0.35;
 
 function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-function round3(v: number): number {
-  return Math.round(v * 1000) / 1000;
-}
-
 const CATALOG_OPTIONS = catalogPieceOptions();
-const SMALLEST_WIDTH = Math.min(...CATALOG_OPTIONS.map((o) => o.w));
 
 function matchesOption(payload: ToolPayload, opt: CatalogPieceOption): boolean {
   return (
@@ -135,8 +118,7 @@ function PieceShape({
 }
 
 /** Maß-Beschriftung wie auf einem echten Aufmaßblatt — folgt einem einzelnen Stück
- *  beim Ziehen/Platzieren-Vorschau. Bei Mehrstück-Chargen (Keil/Zeichnen) bewusst
- *  nicht gezeigt, da dort keine einzelne Breite/Tiefe die Fläche sinnvoll beschreibt. */
+ *  beim Ziehen/Platzieren-Vorschau. */
 function DimensionLabel({ x, y, w, d }: { x: number; y: number; w: number; d: number }) {
   return (
     <text
@@ -159,11 +141,6 @@ interface DragState {
   startClientY: number;
   moved: boolean;
   target: { x: number; y: number } | null;
-}
-
-interface TracingState {
-  start: { x: number; y: number };
-  current: { x: number; y: number };
 }
 
 interface PaletteDragState {
@@ -193,9 +170,7 @@ export function PieceCanvasEditor({
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const svgRef = useRef<SVGSVGElement>(null);
   const [armed, setArmedState] = useState<ToolPayload | null>(null);
-  const [pieceThicknessM, setPieceThicknessM] = useState<1 | 2>(1);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const [tracing, setTracing] = useState<TracingState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
@@ -210,7 +185,6 @@ export function PieceCanvasEditor({
     setArmedState(payload);
     setSelectedId(null);
     setPointerPos(null);
-    setTracing(null);
   }
 
   function showBlockedMessage(text: string) {
@@ -250,118 +224,10 @@ export function PieceCanvasEditor({
     return { x: transformed.x, y: transformed.y };
   }
 
-  /** Entscheidet, ob ein Zeichnen-Zug als gerade Fläche oder als Keil (Verjüngung) gilt — von
-   *  `drawFillFor` UND der Live-Vorschau-Beschriftung genutzt, damit beide exakt übereinstimmen. */
-  function classifyDrag(
-    start: { x: number; y: number },
-    current: { x: number; y: number },
-    thickness: number,
-  ): { mode: 'straight' } | { mode: 'taper'; baseWidthM: number; rowCount: number } {
-    const adx = Math.abs(current.x - start.x);
-    const ady = Math.abs(current.y - start.y);
-    const maxAxis = Math.max(adx, ady);
-    const minAxis = Math.min(adx, ady);
-    if (maxAxis >= SMALLEST_WIDTH && minAxis / Math.max(maxAxis, 1e-6) >= DIAGONAL_RATIO_THRESHOLD) {
-      return {
-        mode: 'taper',
-        baseWidthM: Math.max(SMALLEST_WIDTH, round1(minAxis)),
-        rowCount: Math.max(2, Math.round(maxAxis / thickness)),
-      };
-    }
-    return { mode: 'straight' };
-  }
-
-  /** Baut einen Keil in EXAKT der Richtung, in die tatsächlich gezogen wurde (oben/unten/links/
-   *  rechts) — Basisbreite am Start-Punkt, Spitze Richtung `current`. Nutzt dieselbe
-   *  `wedgePiecesAt`-Geometrie (lokal, "nach unten wachsend" erzeugt) und transformiert das
-   *  Ergebnis passend, statt die Verjüngungs-Mathematik zweimal zu bauen. */
-  function taperPiecesForDrag(
-    start: { x: number; y: number },
-    current: { x: number; y: number },
-    baseWidthM: number,
-    rowCount: number,
-    pieceDepthM: number,
-  ): FilledPiece[] {
-    const totalDepthM = rowCount * pieceDepthM;
-    const dx = current.x - start.x;
-    const dy = current.y - start.y;
-    const vertical = Math.abs(dy) >= Math.abs(dx);
-    const native = wedgePiecesAt({ baseWidthM, rowCount, pieceDepthM }, 0, 0);
-
-    // Jeder der 4 Zweige transformiert nicht nur x/y/w/d, sondern muss eine ggf. vorhandene
-    // Dreieck-Spitzen-Ecke (aus linearTaperRows, siehe corner an der letzten Zeile) exakt
-    // passend mitdrehen/-spiegeln — sonst würde die Phantom-Ecke nach einer Diagonal-Zeichnung
-    // in die falsche Richtung zeigen. Welche Transformation wohin gehört, ergibt sich direkt aus
-    // der jeweiligen x/y/w/d-Transformation der Zeile selbst (Herleitung: Wohin bildet dieser
-    // Zweig die 4 Bounding-Box-Ecken der Zeile ab?):
-    // - dy>=0: reine Verschiebung → Ecke unverändert.
-    // - dy<0: y wird gespiegelt, x bleibt → vertikale Spiegelung (oben/unten tauschen).
-    // - dx>=0: x/y vertauscht (Transposition) → Spiegelung an der Hauptdiagonale.
-    // - dx<0: x/y vertauscht UND gespiegelt → das ist exakt der 4er-Rotationszyklus (nextTriangleCorner).
-    return native.map((p) => {
-      if (vertical) {
-        const baseX = start.x - baseWidthM / 2 + p.x;
-        if (dy >= 0) return { x: round3(baseX), y: round3(start.y + p.y), w: p.w, d: p.d, corner: p.corner };
-        const flippedY = totalDepthM - p.y - p.d;
-        const corner = p.corner === undefined ? undefined : mirrorTriangleCornerVertical(p.corner);
-        return { x: round3(baseX), y: round3(start.y - totalDepthM + flippedY), w: p.w, d: p.d, corner };
-      }
-      // Waagerechter Zug: Zeilen werden zu Spalten (x/y und w/d vertauscht).
-      const baseY = start.y - baseWidthM / 2 + p.x;
-      if (dx >= 0) {
-        const corner = p.corner === undefined ? undefined : mirrorTriangleCornerDiagonal(p.corner);
-        return { x: round3(start.x + p.y), y: round3(baseY), w: p.d, d: p.w, corner };
-      }
-      const flippedY = totalDepthM - p.y - p.d;
-      const corner = p.corner === undefined ? undefined : nextTriangleCorner(p.corner);
-      return { x: round3(start.x - totalDepthM + flippedY), y: round3(baseY), w: p.d, d: p.w, corner };
-    });
-  }
-
-  /** Verschiebt eine Charge nur so weit nach rechts/unten, dass kein Stück mehr bei x<0 oder
-   *  y<0 liegt — die Form/Reihenfolge bleibt exakt gleich, nur der Anker rutscht. Ohne das kann
-   *  ein schräger Zeichnen-Zug (Keil) über den linken/oberen Rand hinaus platziert werden, siehe
-   *  Bug-Report: teils unsichtbare Stücke, die auch "Alles verschieben ←" blockieren. */
-  function clampBatchToCanvas(filled: FilledPiece[]): FilledPiece[] {
-    if (filled.length === 0) return filled;
-    const minX = Math.min(...filled.map((p) => p.x));
-    const minY = Math.min(...filled.map((p) => p.y));
-    const dx = minX < 0 ? -minX : 0;
-    const dy = minY < 0 ? -minY : 0;
-    if (dx === 0 && dy === 0) return filled;
-    return filled.map((p) => ({ ...p, x: round3(p.x + dx), y: round3(p.y + dy) }));
-  }
-
-  function drawFillFor(start: { x: number; y: number }, current: { x: number; y: number }, thickness: number): FilledPiece[] {
-    const dx = current.x - start.x;
-    const dy = current.y - start.y;
-    const horizontal = Math.abs(dx) >= Math.abs(dy);
-    const span = horizontal ? Math.abs(dx) : Math.abs(dy);
-
-    if (span < SMALLEST_WIDTH) {
-      // Kaum Bewegung: wie ein einfacher Klick auf "Stück" behandeln, statt wirkungslos zu
-      // bleiben — kleinstes verfügbares Stück, mittig auf den Startpunkt.
-      const pos = findFreePosition(pieces, SMALLEST_WIDTH, thickness, start.x - SMALLEST_WIDTH / 2, start.y - thickness / 2);
-      return [{ x: pos.x, y: pos.y, w: SMALLEST_WIDTH, d: thickness }];
-    }
-    const drag = classifyDrag(start, current, thickness);
-    if (drag.mode === 'taper') {
-      return clampBatchToCanvas(taperPiecesForDrag(start, current, drag.baseWidthM, drag.rowCount, thickness));
-    }
-    if (horizontal) {
-      const minX = Math.max(0, Math.min(start.x, current.x));
-      const fixedY = Math.max(0, start.y - thickness / 2);
-      return fillHorizontalSpan(round1(span), thickness, minX, fixedY);
-    }
-    const minY = Math.max(0, Math.min(start.y, current.y));
-    const fixedX = Math.max(0, start.x - thickness / 2);
-    return fillVerticalSpan(round1(span), thickness, fixedX, minY);
-  }
-
   // Bedient sowohl den Klick-Bewaffnen-Hover als auch das Ziehen aus der Palette (sobald der
   // Cursor über dem Canvas ist) — eine einzige Vorschau-Quelle für beide Wege.
   function previewForPayload(payload: ToolPayload | null): FilledPiece[] | null {
-    if (!payload || payload.kind === 'draw' || !pointerPos) return null;
+    if (!payload || !pointerPos) return null;
     if (payload.kind === 'piece') {
       const pos = findFreePosition(pieces, payload.w, payload.d, pointerPos.x - payload.w / 2, pointerPos.y - payload.d / 2);
       return [{ x: pos.x, y: pos.y, w: payload.w, d: payload.d }];
@@ -374,14 +240,12 @@ export function PieceCanvasEditor({
   // arm(null) beim Start eines Paletten-Ziehens sorgt dafür, dass armed/paletteDrag nie
   // gleichzeitig aktiv sind — das `??` ist defensiv, nicht tragend.
   const activePayload = armed ?? (paletteDrag?.overCanvas ? paletteDrag.payload : null);
-  const previewPieces =
-    armed?.kind === 'draw' ? (tracing ? drawFillFor(tracing.start, tracing.current, pieceThicknessM) : null) : previewForPayload(activePayload);
+  const previewPieces = previewForPayload(activePayload);
 
   // Reine Platzier-Funktion ohne Seiteneffekt auf armed/paletteDrag — das bleibt Sache der
   // Aufrufer (Klick-Platzieren-Pfad, Paletten-Ziehen UND Tastatur-Platzieren nutzen dieselbe
   // Logik, nur die Umrechnung von Bildschirm- zu Meter-Koordinaten unterscheidet sich).
   function commitPayloadAtPoint(payload: ToolPayload, pos: { x: number; y: number }) {
-    if (payload.kind === 'draw') return;
     if (payload.kind === 'piece') {
       const target = findFreePosition(pieces, payload.w, payload.d, pos.x - payload.w / 2, pos.y - payload.d / 2);
       onAddPieces([{ x: target.x, y: target.y, w: payload.w, d: payload.d }]);
@@ -427,8 +291,7 @@ export function PieceCanvasEditor({
 
   // Drehen, während ein Stück noch aus der Palette gezogen wird (vor dem Loslassen) — der
   // Button behält seinen Fokus über die ganze Zieh-Geste (Pointer-Capture ändert daran nichts),
-  // daher reicht ein normaler onKeyDown hier. Nur für 'piece'/'triangle' relevant — Zeichnen
-  // kennt kein Drehen (siehe rotateSelected/das bestehende Arm-Drehen).
+  // daher reicht ein normaler onKeyDown hier.
   function handlePaletteButtonKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
     if (e.key.toLowerCase() !== 'r' || !paletteDrag) return;
     e.preventDefault();
@@ -529,9 +392,7 @@ export function PieceCanvasEditor({
   // zu verschieben) oder — bei bewaffnetem Werkzeug — einen Tastatur-Cursor (dieselbe pointerPos,
   // die auch die Maus-Vorschau treibt), Enter/Leertaste platziert dort. R dreht, Entf/Rücktaste
   // entfernt, Esc bricht ab. 1–5 wählen die Plattengrößen in derselben Reihenfolge wie die
-  // Segmented-Control, T bewaffnet das Dreieckpodest. Zeichnen bleibt bewusst
-  // maus-only (siehe Analyse zum Paletten-Ziehen) — sein Zug-Gestus lässt sich nicht sinnvoll in
-  // diskrete Tastendrücke übersetzen.
+  // Segmented-Control, T bewaffnet das Dreieckpodest.
   function handleCanvasKeyDown(e: React.KeyboardEvent<SVGSVGElement>) {
     if (e.key === 'Escape') {
       arm(null);
@@ -582,7 +443,7 @@ export function PieceCanvasEditor({
         if (fitsAt(pieces, nx, ny, selectedPiece.w, selectedPiece.d, selectedPiece.id)) {
           onMovePiece(selectedPiece.id, nx, ny);
         }
-      } else if (armed && armed.kind !== 'draw') {
+      } else if (armed) {
         setPointerPos((cur) => {
           const base = cur ?? { x: 0, y: 0 };
           return { x: Math.max(0, round1(base.x + dx)), y: Math.max(0, round1(base.y + dy)) };
@@ -590,7 +451,7 @@ export function PieceCanvasEditor({
       }
       return;
     }
-    if ((e.key === 'Enter' || e.key === ' ') && armed && armed.kind !== 'draw' && pointerPos) {
+    if ((e.key === 'Enter' || e.key === ' ') && armed && pointerPos) {
       e.preventDefault();
       commitPayloadAtPoint(armed, pointerPos);
       arm(null);
@@ -616,19 +477,15 @@ export function PieceCanvasEditor({
   return (
     <div className="space-y-3">
       <p className="text-xs text-[var(--color-text-muted)]">
-        Ziehe ein Stück oder Zeichnen direkt aus der Leiste unten auf den Plan — oder klicke es
-        erst an und dann auf die gewünschte Stelle (bei Zeichnen: klicke und ziehe auf dem Plan). Ein vorhandenes
-        Stück kannst du direkt ziehen, um es zu verschieben, oder anklicken, um es zu drehen oder zu entfernen. Nach
-        einem Klick auf den Plan geht es auch per Tastatur (Kurzbefehle unten).
+        Ziehe ein Stück direkt aus der Leiste unten auf den Plan — oder klicke es erst an und dann
+        auf die gewünschte Stelle. Ein vorhandenes Stück kannst du direkt ziehen, um es zu verschieben, oder
+        anklicken, um es zu drehen oder zu entfernen. Nach einem Klick auf den Plan geht es auch per Tastatur
+        (Kurzbefehle unten).
       </p>
 
       {armed && (
         <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-accent)]">
-          <span>
-            {armed.kind === 'draw'
-              ? 'Jetzt im Plan unten klicken, gedrückt halten, über die gewünschte Breite oder Tiefe ziehen und dann loslassen.'
-              : 'Jetzt im Plan unten auf die gewünschte Stelle klicken.'}
-          </span>
+          <span>Jetzt im Plan unten auf die gewünschte Stelle klicken.</span>
           <button type="button" onClick={() => arm(null)} className="shrink-0 text-xs underline">
             Abbrechen
           </button>
@@ -675,7 +532,7 @@ export function PieceCanvasEditor({
         viewBox={viewBox}
         className="w-full h-auto max-h-[420px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         role="img"
-        aria-label="Bau-Editor — klicken und dann Tastatur nutzen (Pfeiltasten, Enter, R, Entf, Esc, 1–5, T, K; Kurzbefehle siehe unten)"
+        aria-label="Bau-Editor — klicken und dann Tastatur nutzen (Pfeiltasten, Enter, R, Entf, Esc, 1–5, T; Kurzbefehle siehe unten)"
         tabIndex={0}
         onKeyDown={handleCanvasKeyDown}
       >
@@ -726,17 +583,17 @@ export function PieceCanvasEditor({
           width={canvasWidthM}
           height={canvasDepthM}
           fill="transparent"
-          pointerEvents={armed && armed.kind !== 'draw' ? 'all' : 'none'}
+          pointerEvents={armed ? 'all' : 'none'}
           onMouseMove={(e) => {
-            if (!armed || armed.kind === 'draw') return;
+            if (!armed) return;
             setPointerPos(svgPointFromClient(e.clientX, e.clientY));
           }}
           onClick={(e) => {
-            if (!armed || armed.kind === 'draw') return;
+            if (!armed) return;
             commitPayloadAt(armed, e.clientX, e.clientY);
             arm(null);
           }}
-          style={{ cursor: armed && armed.kind !== 'draw' ? 'copy' : 'default' }}
+          style={{ cursor: armed ? 'copy' : 'default' }}
         />
         {!armed && selectedId && (
           <rect
@@ -844,79 +701,6 @@ export function PieceCanvasEditor({
           <DimensionLabel x={previewPieces[0].x} y={previewPieces[0].y} w={previewPieces[0].w} d={previewPieces[0].d} />
         )}
 
-        {armed?.kind === 'draw' && (
-          <>
-            <rect
-              x={0}
-              y={0}
-              width={canvasWidthM}
-              height={canvasDepthM}
-              fill="transparent"
-              pointerEvents="all"
-              style={{ cursor: 'crosshair' }}
-              onPointerDown={(e) => {
-                try {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                } catch {
-                  // ignorieren — s.o.
-                }
-                const { x, y } = svgPointFromClient(e.clientX, e.clientY);
-                setTracing({ start: { x, y }, current: { x, y } });
-              }}
-              onPointerMove={(e) => {
-                if (!tracing) return;
-                const { x, y } = svgPointFromClient(e.clientX, e.clientY);
-                setTracing((t) => (t ? { ...t, current: { x, y } } : t));
-              }}
-              onPointerUp={() => {
-                if (tracing) {
-                  const filled = drawFillFor(tracing.start, tracing.current, pieceThicknessM);
-                  if (fitsAllAt(pieces, filled)) {
-                    onAddPieces(filled);
-                  } else {
-                    showBlockedMessage('Hier ist kein Platz — versuch es an einer anderen Stelle.');
-                  }
-                }
-                setTracing(null);
-                setArmedState(null);
-              }}
-            />
-            {!tracing && (
-              <text
-                x={canvasWidthM / 2}
-                y={canvasDepthM / 2}
-                fontSize={0.22}
-                textAnchor="middle"
-                fill="var(--color-accent)"
-                opacity={0.6}
-                style={{ pointerEvents: 'none' }}
-              >
-                Klicken + ziehen (waagerecht, senkrecht oder schräg für einen Keil), um eine Fläche zu füllen
-              </text>
-            )}
-            {tracing &&
-              (() => {
-                const drag = classifyDrag(tracing.start, tracing.current, pieceThicknessM);
-                const label =
-                  drag.mode === 'taper'
-                    ? `Keil, oben ${formatMeters(drag.baseWidthM, 1)} m, ${drag.rowCount} Reihen`
-                    : `Gerade, ${formatMeters(Math.max(Math.abs(tracing.current.x - tracing.start.x), Math.abs(tracing.current.y - tracing.start.y)), 1)} m`;
-                return (
-                  <text
-                    x={tracing.current.x}
-                    y={tracing.current.y - 0.25}
-                    fontSize={0.18}
-                    textAnchor="middle"
-                    fill="var(--color-accent)"
-                    fontFamily="var(--font-mono)"
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {label}
-                  </text>
-                );
-              })()}
-          </>
-        )}
       </svg>
 
       <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: 'var(--font-display)' }}>
@@ -1000,7 +784,7 @@ export function PieceCanvasEditor({
                 }}
                 aria-pressed={isArmed}
                 aria-label={`Dreieckpodest ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Dreieckpodest — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten (anders als ein schräg gezogenes Zeichnen-Stück, das nur eine Näherung aus mehreren Rechtecken ist)"
+                title="Dreieckpodest — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten"
                 className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
                   isArmed
                     ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
@@ -1011,48 +795,7 @@ export function PieceCanvasEditor({
               </button>
             );
           })()}
-          {(() => {
-            const payload: ToolPayload = { kind: 'draw' };
-            const isArmed = armed?.kind === 'draw';
-            return (
-              <button
-                type="button"
-                onClick={() => arm(isArmed ? null : payload)}
-                aria-pressed={isArmed}
-                aria-label={`Zeichnen ${isArmed ? 'aktiv' : 'aktivieren'}`}
-                title="Zeichnen — klicken und waagerecht oder senkrecht über den Plan ziehen; die berührte Fläche wird automatisch mit echten Katalogstücken gefüllt"
-                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
-                }`}
-              >
-                <span aria-hidden>✏️</span>
-              </button>
-            );
-          })()}
         </div>
-
-        {armed?.kind === 'draw' && (
-          <div className="flex items-center gap-1 pl-2 ml-1 border-l border-[var(--color-border)]">
-            <span className="text-xs text-[var(--color-text-muted)]">Tiefe:</span>
-            {([1, 2] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setPieceThicknessM(t)}
-                aria-pressed={pieceThicknessM === t}
-                className={`px-2 py-1 rounded text-xs border cursor-pointer select-none ${
-                  pieceThicknessM === t
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'
-                }`}
-              >
-                {t} m
-              </button>
-            ))}
-          </div>
-        )}
 
         {(onUndo || pieces.length > 0) && (
           <div className="flex items-center gap-1.5 ml-auto" role="group" aria-label="Verlauf">
