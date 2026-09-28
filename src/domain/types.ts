@@ -11,9 +11,8 @@ export interface PanelSize {
   /** Tiefe in Metern */
   d: number;
   /**
-   * true = nur als Sondermaß-Substitut für den Restbereich der Modulachse nutzbar
-   * (schmalere Platte gleicher Tiefe), nicht fürs Hauptraster. Laut NivTec-Anleitung
-   * wird dafür NICHT rotiert, sondern eine schmalere Platte gleicher Bautiefe verbaut.
+   * true = nicht die 2×1-Hauptplatte (nur UI-Hervorhebung, ändert nichts an Katalog-Verhalten
+   * oder Tests).
    */
   sondermassOnly?: boolean;
 }

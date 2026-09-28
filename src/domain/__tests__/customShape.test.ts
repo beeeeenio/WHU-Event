@@ -266,14 +266,14 @@ describe('fitsAllAt (Mehrstück-Chargen-Policy)', () => {
 });
 
 describe('catalogPieceOptions', () => {
-  it('enthält die Hauptplatte, die drei 1-m-Sondermaß-Breiten und die neue 0,5×2-Platte', () => {
+  it('enthält alle 13 RECT_CATALOG-Einträge', () => {
     const options = catalogPieceOptions();
+    expect(options).toHaveLength(13);
     expect(options).toContainEqual({ w: 2, d: 1, isSondermass: false });
+    expect(options).toContainEqual({ w: 2, d: 0.75, isSondermass: true });
     expect(options).toContainEqual({ w: 1.5, d: 1, isSondermass: true });
     expect(options).toContainEqual({ w: 1, d: 1, isSondermass: true });
-    expect(options).toContainEqual({ w: 0.5, d: 1, isSondermass: true });
-    expect(options).toContainEqual({ w: 0.5, d: 2, isSondermass: true });
-    expect(options).toHaveLength(5);
+    expect(options).toContainEqual({ w: 0.5, d: 0.5, isSondermass: true });
   });
 });
 

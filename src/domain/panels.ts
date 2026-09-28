@@ -16,13 +16,16 @@ import type { PanelSize } from './types';
  */
 export const PRIMARY_PANEL: PanelSize = { w: 2, d: 1 };
 
-export const SONDERMASS_PANELS: PanelSize[] = [
-  { w: 1.5, d: 1, sondermassOnly: true },
-  { w: 1, d: 1, sondermassOnly: true },
-  { w: 0.5, d: 1, sondermassOnly: true },
-  // Substitut für die 2-m-Achse (analog zu den drei obigen für die 1-m-Modulachse) — genau wie
-  // diese ebenfalls frei drehbar verbaubar.
-  { w: 0.5, d: 2, sondermassOnly: true },
+export const CATALOG_WIDTHS_M = [2, 1.5, 1] as const;
+export const CATALOG_DEPTHS_M = [1, 0.75, 0.5, 0.39] as const;
+
+/** Alle rechteckigen Katalogplatten (Standardausführung), in Katalog-Orientierung (w = Breite).
+ *  13 Einträge: die 3×4-Matrix (2,1.5,1 m × 1,0.75,0.5,0.39 m) plus die 0.5×0.5 m-Platte. */
+export const RECT_CATALOG: PanelSize[] = [
+  ...CATALOG_WIDTHS_M.flatMap((w) =>
+    CATALOG_DEPTHS_M.map((d) => ({ w, d, sondermassOnly: !(w === 2 && d === 1) })),
+  ),
+  { w: 0.5, d: 0.5, sondermassOnly: true },
 ];
 
 /** Kein echtes rechteckiges Katalogstück: das rechtwinklige Dreieckpodest (Katheten 1×1 m,
@@ -31,7 +34,8 @@ export const SONDERMASS_PANELS: PanelSize[] = [
 export const TRIANGLE_PANEL_SIZE_M = 1;
 export const TRIANGLE_SIZE_KEY = 'dreieck-1x1';
 
-/** Bekannte Artikelnummern, Schlüssel = sortiertes (w,d)-Paar (Orientierung egal). */
+/** Bekannte Artikelnummern, Schlüssel = sortiertes (w,d)-Paar (Orientierung egal).
+ *  Weitere Nummern unbekannt → '–', bewusst nicht erfunden. */
 const ARTICLE_NUMBERS: Record<string, string> = {
   '1x2': '111 01 0',
   '1x1.5': '111 03 0',
@@ -57,13 +61,43 @@ export function primaryPanel(): PanelSize {
  *  unbemerkt "auf der 2-m-Achse gibt es keine Substitution" anzunehmen — genau der Fehler,
  *  den die 0,5×2-Platte hier korrigiert. */
 export function sondermassSubstituteWidths(depthM: number): number[] {
-  return SONDERMASS_PANELS.filter((p) => closeTo(p.d, depthM))
-    .map((p) => p.w)
-    .sort((a, b) => b - a);
+  // Äquivalent zu den alten SONDERMASS_PANELS:
+  // d=1: [1.5, 1, 0.5] (direkt (1.5,1), (1,1), und rotiert (0.5,1) = (1,0.5))
+  // d=2: [0.5] (rotiert (0.5,2) = (2,0.5))
+  if (closeTo(depthM, 1)) {
+    return [1.5, 1, 0.5];
+  }
+  if (closeTo(depthM, 2)) {
+    return [0.5];
+  }
+  // Für andere Tiefen, die nicht in den ursprünglichen SONDERMASS_PANELS vorkamen
+  return [];
 }
 
 function closeTo(a: number, b: number): boolean {
   return Math.abs(a - b) < 1e-6;
+}
+
+/** Sucht die Katalog-Größe mit gegebenen (w,d) oder (d,w), unabhängig von Orientierung.
+ *  Gibt undefined zurück, wenn keine exakte Match vorliegt. */
+export function findCatalogRect(w: number, d: number): PanelSize | undefined {
+  return RECT_CATALOG.find((p) => (closeTo(p.w, w) && closeTo(p.d, d)) || (closeTo(p.w, d) && closeTo(p.d, w)));
+}
+
+/** True, wenn (w,d) oder (d,w) in RECT_CATALOG vorhanden ist. */
+export function isCatalogRect(w: number, d: number): boolean {
+  return findCatalogRect(w, d) !== undefined;
+}
+
+/** Alle Breiten w aus RECT_CATALOG, für die ein Eintrag (w, depthM) ODER (depthM, w) existiert.
+ *  Sortiert groß → klein, ohne Duplikate. */
+export function widthsForDepth(depthM: number): number[] {
+  const widths = new Set<number>();
+  for (const entry of RECT_CATALOG) {
+    if (closeTo(entry.d, depthM)) widths.add(entry.w);
+    if (closeTo(entry.w, depthM)) widths.add(entry.d);
+  }
+  return Array.from(widths).sort((a, b) => b - a);
 }
 
 /** True für die Hauptplatte in JEDER Orientierung (2×1 normal oder 1×2 gedreht) — beide sind
@@ -73,13 +107,10 @@ export function isPrimaryPanelPiece(w: number, d: number): boolean {
   return (closeTo(w, p.w) && closeTo(d, p.d)) || (closeTo(w, p.d) && closeTo(d, p.w));
 }
 
-/** Sondermaß-Substitut ist eine der Größen aus SONDERMASS_PANELS, in JEDER Orientierung — siehe
- *  Korrektur oben, Sondermaß-Platten werden genau wie die Hauptplatte gedreht verbaut. (w=1,
- *  d=2) z.B. ist trotzdem KEIN Sondermaß-Stück, sondern die Hauptplatte gedreht — deshalb bei
- *  Mehrdeutigkeit zuerst gegen die Hauptplatte prüfen (Vorrang, siehe auch catalogSizeKey). */
+/** Sondermaß-Stück = aus RECT_CATALOG, aber NICHT die 2×1-Hauptplatte (nur UI-Hervorhebung,
+ *  ändert nichts an Katalog-Verhalten oder Tests). */
 export function isSondermassPiece(w: number, d: number): boolean {
-  if (isPrimaryPanelPiece(w, d)) return false;
-  return SONDERMASS_PANELS.some((p) => (closeTo(p.w, w) && closeTo(p.d, d)) || (closeTo(p.w, d) && closeTo(p.d, w)));
+  return isCatalogRect(w, d) && !isPrimaryPanelPiece(w, d);
 }
 
 /** Gruppierungsschlüssel für Materialliste/Zählung: jedes echte Katalogstück (Hauptplatte wie
@@ -90,7 +121,7 @@ export function isSondermassPiece(w: number, d: number): boolean {
  *  Schlüssel/dieselbe Anzeige liefert. */
 export function catalogSizeKey(w: number, d: number): string {
   if (isPrimaryPanelPiece(w, d)) return sizeKey(PRIMARY_PANEL.w, PRIMARY_PANEL.d);
-  const match = SONDERMASS_PANELS.find((p) => (closeTo(p.w, w) && closeTo(p.d, d)) || (closeTo(p.w, d) && closeTo(p.d, w)));
+  const match = findCatalogRect(w, d);
   return match ? sizeKey(match.w, match.d) : sizeKey(w, d);
 }
 

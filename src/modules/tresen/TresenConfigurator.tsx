@@ -15,6 +15,7 @@ import { boundingBoxOf, buildLayoutFromPieces, fillHorizontalSpan, makePieceId }
 import { buildMaterialList, mergeMaterialLists } from '../../domain/materialList';
 import { isBracingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import { SPINDEL_HEIGHT_OPTIONS_CM } from '../../domain/tresen';
+import { CATALOG_DEPTHS_M } from '../../domain/panels';
 import { parseTresenFile } from '../../domain/savedState';
 import { formatMeters } from '../../lib/format';
 import { useDraftAutosave } from '../../hooks/useDraftAutosave';
@@ -97,19 +98,22 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
 
   // Setzt die Thekenplatte auf dieselbe Breite wie der aktuelle Unterbau, bei halber Tiefe —
   // ersetzt den bisherigen Inhalt der Ebene komplett (kein Zusammenführen), da das eine bewusste
-  // Neuerzeugung ist, kein Hinzufügen. Zieltiefe wird aufs 0,5-m-Raster gerundet (Minimum 0,5 m).
+  // Neuerzeugung ist, kein Hinzufügen. Zieltiefe wird aus CATALOG_DEPTHS_M ausgewählt: die größte
+  // verfügbare Tiefe ≤ halbe Unterbau-Tiefe.
   //
   // Randnotiz zum früheren "kann die Thekenplatte nicht drehen"-Bug: Sondermaß-Platten dürfen laut
   // Bennis eigener Praxiserfahrung (siehe Korrektur in panels.ts) genau wie die Hauptplatte gedreht
-  // verbaut werden — der eigentliche Fehler lag NICHT in der 0,5-m-Rundung hier (die war schon
-  // immer korrekt), sondern darin, dass die so entstehenden, teils gedrehten Sondermaß-Stücke von
-  // isSondermassPiece/catalogSizeKey nicht erkannt wurden (nur eine feste (w,d)-Reihenfolge
-  // geprüft) — dort behoben, nicht hier.
+  // verbaut werden — der eigentliche Fehler lag NICHT in der Rundung hier, sondern darin, dass die
+  // so entstehenden, teils gedrehten Sondermaß-Stücke von isSondermassPiece/catalogSizeKey nicht
+  // erkannt wurden (nur eine feste (w,d)-Reihenfolge geprüft) — dort behoben, nicht hier.
   function setThekeToHalfDepth() {
     // Echte Lage und Größe des Unterbaus (nicht vom Ursprung aus gemessen) — sonst landet die
     // Thekenplatte nach "Alles verschieben" des Unterbaus zu breit und am falschen Fleck.
     if (!baseBoundingBox) return;
-    const targetDepthM = Math.max(0.5, Math.round(baseBoundingBox.depthM / 2 / 0.5) * 0.5);
+    const EPS = 1e-6;
+    const targetHalfDepth = baseBoundingBox.depthM / 2;
+    const sortedDepths = [...CATALOG_DEPTHS_M].sort((a, b) => b - a);
+    const targetDepthM = sortedDepths.find((d) => d <= targetHalfDepth + EPS) ?? 0.39;
     const filled = fillHorizontalSpan(baseBoundingBox.widthM, targetDepthM, baseBoundingBox.x, baseBoundingBox.y);
     top.replace(filled.map((p) => ({ ...p, id: makePieceId() })));
   }

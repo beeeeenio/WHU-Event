@@ -1,17 +1,17 @@
-import { computeLayout } from './layout';
 import {
   catalogSizeKey,
   isSondermassPiece,
-  primaryPanel,
-  sondermassSubstituteWidths,
+  RECT_CATALOG,
   TRIANGLE_PANEL_SIZE_M,
   TRIANGLE_SIZE_KEY,
+  widthsForDepth,
 } from './panels';
 import { nextTriangleCorner } from './triangle';
 import type { LayoutResult, PanelInstance, TriangleCorner } from './types';
 
 const EPS = 1e-6;
 const GRID_M = 0.5;
+const EDGE_SNAP_TOLERANCE_M = 0.2;
 
 function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
@@ -19,6 +19,30 @@ function round3(v: number): number {
 
 function snapToGrid(v: number): number {
   return Math.round(v / GRID_M) * GRID_M;
+}
+
+/** Rastet v (Anfangskoordinate eines Stücks der Länge size) auf die nächste Kante vorhandener
+ *  Stücke (Anfang an Ende/Anfang, Ende an Anfang/Ende), wenn sie näher als die Toleranz liegt;
+ *  sonst aufs 0,5-m-Raster. */
+function snapCoord(v: number, size: number, edges: number[]): number {
+  let bestCandidate: number | null = null;
+  let bestDistance = EDGE_SNAP_TOLERANCE_M;
+
+  for (const edge of edges) {
+    const candidates = [edge, edge - size];
+    for (const candidate of candidates) {
+      const distance = Math.abs(candidate - v);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  if (bestCandidate !== null) {
+    return round3(bestCandidate);
+  }
+  return snapToGrid(v);
 }
 
 /**
@@ -77,14 +101,6 @@ export function rotatePieceInPlace(piece: Piece2D): Piece2D {
   return { ...piece, w: piece.d, d: piece.w };
 }
 
-/**
- * "Normal" (Tiefe = 1 m, Modulachse) erlaubt die volle Sondermaß-Palette; jede andere feste
- * Tiefe (i.d.R. 2 m) ist laut Anleitung die feste Achse OHNE Sondermaß-Substitution.
- */
-function orientationForPieceDepth(pieceDepthM: number): 'normal' | 'rotiert' {
-  return Math.abs(pieceDepthM - primaryPanel().d) < 1e-6 ? 'normal' : 'rotiert';
-}
-
 export interface CatalogPieceOption {
   w: number;
   d: number;
@@ -95,12 +111,7 @@ export interface CatalogPieceOption {
  *  Unterbau und Thekenplatte bauen beide aus demselben Katalog, Drehen ersetzt die alte
  *  Ausrichtungs-Bindung. Jede Größe ist gleichermaßen frei drehbar (siehe panels.ts). */
 export function catalogPieceOptions(): CatalogPieceOption[] {
-  const primary = primaryPanel();
-  return [
-    { w: primary.w, d: primary.d, isSondermass: false },
-    ...sondermassSubstituteWidths(primary.d).map((w) => ({ w, d: primary.d, isSondermass: true })),
-    ...sondermassSubstituteWidths(2).map((w) => ({ w, d: 2, isSondermass: true })),
-  ];
+  return RECT_CATALOG.map((p) => ({ w: p.w, d: p.d, isSondermass: !!p.sondermassOnly }));
 }
 
 function aabbOverlap(
@@ -159,8 +170,17 @@ export function findFreePosition(
   desiredY: number,
   excludeId?: string,
 ): { x: number; y: number } {
-  const dx = Math.max(0, snapToGrid(desiredX));
-  const dy = Math.max(0, snapToGrid(desiredY));
+  // Baue Kanten-Listen aus bestehenden Stücken
+  const xEdges = existing
+    .filter((p) => p.id !== excludeId)
+    .flatMap((p) => [p.x, p.x + p.w]);
+  const yEdges = existing
+    .filter((p) => p.id !== excludeId)
+    .flatMap((p) => [p.y, p.y + p.d]);
+
+  // Versuche Kanten-Rastern mit Fallback auf Grid
+  const dx = Math.max(0, snapCoord(desiredX, w, xEdges));
+  const dy = Math.max(0, snapCoord(desiredY, d, yEdges));
   const candidateOk = (x: number, y: number) => isWithinCanvas(x, y) && fitsAt(existing, x, y, w, d, excludeId);
 
   if (candidateOk(dx, dy)) return { x: dx, y: dy };
@@ -227,7 +247,13 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
     orientation: 'normal',
     widthM: round3(maxX),
     depthM: round3(maxY),
-    areaM2: round3(panels.reduce((sum, p) => sum + p.w * p.d, 0)),
+    areaM2: round3(
+      panels.reduce((sum, p) => {
+        // Dreieck hat halbe Fläche der Bounding-Box
+        const area = p.corner !== undefined ? (p.w * p.d) / 2 : p.w * p.d;
+        return sum + area;
+      }, 0),
+    ),
     cols: 0,
     rows: 0,
     panels,
@@ -277,14 +303,22 @@ export function normalizeToOrigin(pieces: Piece2D[]): Piece2D[] {
 }
 
 /**
- * Zerlegt eine Spannweite in echte Katalogstücke (inkl. Sondermaß auf der Modulachse) — kennt
+ * Zerlegt eine Spannweite in echte Katalogstücke (greedy Zerlegung) — kennt
  * nur "eine Achse mit fester Tiefe", kein Reihen-/Richtungskonzept. Grundlage für die
  * horizontalen UND (transponiert) vertikalen Wrapper unten sowie für den Dreieck-Keil.
  */
 function fillSpanWithCatalog(spanWidthM: number, pieceDepthM: number, offsetX: number): { x: number; w: number }[] {
   if (spanWidthM <= 0) return [];
-  const rowLayout = computeLayout(spanWidthM, pieceDepthM)[orientationForPieceDepth(pieceDepthM)];
-  return rowLayout.panels.map((p) => ({ x: round3(offsetX + p.x), w: p.w }));
+  const widths = widthsForDepth(pieceDepthM);
+  const out: { x: number; w: number }[] = [];
+  let x = 0;
+  while (spanWidthM - x > EPS) {
+    const w = widths.find((cw) => cw <= spanWidthM - x + EPS);
+    if (w === undefined) break;
+    out.push({ x: round3(offsetX + x), w });
+    x = round3(x + w);
+  }
+  return out;
 }
 
 /** Waagerechter Lauf, feste Tiefe: Zerlegung entlang x bei fixer y — z.B. der Hauptlauf einer Theke. */

@@ -26,7 +26,7 @@ function parseSizeKey(key: string): { w: number; d: number } {
 }
 
 function formatPanelLabel(w: number, d: number): string {
-  const fmt = (v: number) => v.toFixed(1).replace('.', ',');
+  const fmt = (v: number) => (Math.round(v * 100) / 100).toString().replace('.', ',');
   return `Systempodest ${fmt(w)}×${fmt(d)} m`;
 }
 

@@ -1,14 +1,12 @@
 import { useId, useRef, useState } from 'react';
 import {
-  catalogPieceOptions,
   findFreePosition,
   fitsAt,
   shiftPieces,
-  type CatalogPieceOption,
   type FilledPiece,
   type Piece2D,
 } from '../../domain/customShape';
-import { isSondermassPiece, TRIANGLE_PANEL_SIZE_M } from '../../domain/panels';
+import { isCatalogRect, isSondermassPiece, TRIANGLE_PANEL_SIZE_M, CATALOG_WIDTHS_M, CATALOG_DEPTHS_M } from '../../domain/panels';
 import { nextTriangleCorner, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
 import { formatMeters } from '../../lib/format';
@@ -54,14 +52,8 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-const CATALOG_OPTIONS = catalogPieceOptions();
-
-function matchesOption(payload: ToolPayload, opt: CatalogPieceOption): boolean {
-  return (
-    payload.kind === 'piece' &&
-    ((payload.w === opt.w && payload.d === opt.d) || (payload.w === opt.d && payload.d === opt.w))
-  );
-}
+const PALETTE_WIDTHS = [...CATALOG_WIDTHS_M, 0.5] as const;
+const PALETTE_DEPTHS = [...CATALOG_DEPTHS_M] as const;
 
 interface ShapeGeometry {
   x: number;
@@ -130,7 +122,7 @@ function DimensionLabel({ x, y, w, d }: { x: number; y: number; w: number; d: nu
       fontFamily="var(--font-mono)"
       style={{ pointerEvents: 'none' }}
     >
-      {formatMeters(w, 1)}×{formatMeters(d, 1)} m
+      {formatMeters(w, 2)}×{formatMeters(d, 2)} m
     </text>
   );
 }
@@ -175,6 +167,8 @@ export function PieceCanvasEditor({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [paletteW, setPaletteW] = useState(2);
+  const [paletteD, setPaletteD] = useState(1);
   // Ein Button hat natives Klick-Verhalten, das nach einem echten Ziehen trotzdem feuert
   // (Pointer-Events und das nachfolgende `click` sind getrennte, aufeinanderfolgende Dinge,
   // auch bei Pointer-Capture). Ein Ref statt State, damit der Wert synchron und ohne
@@ -457,12 +451,21 @@ export function PieceCanvasEditor({
       arm(null);
       return;
     }
-    if (/^[1-5]$/.test(e.key)) {
-      const opt = CATALOG_OPTIONS[Number(e.key) - 1];
-      if (opt) {
+    if (/^[1-4]$/.test(e.key)) {
+      const idx = Number(e.key) - 1;
+      const widths = [...PALETTE_WIDTHS];
+      if (idx < widths.length) {
         e.preventDefault();
-        const payload: ToolPayload = { kind: 'piece', w: opt.w, d: opt.d };
-        const isArmed = armed != null && matchesOption(armed, opt);
+        const newW = widths[idx];
+        let newD = paletteD;
+        if (!isCatalogRect(newW, newD)) {
+          const validDepths = PALETTE_DEPTHS.filter((d) => isCatalogRect(newW, d));
+          newD = validDepths[0] ?? 0.39;
+        }
+        setPaletteW(newW);
+        setPaletteD(newD);
+        const isArmed = armed?.kind === 'piece' && armed.w === newW && armed.d === newD;
+        const payload: ToolPayload = { kind: 'piece', w: newW, d: newD };
         arm(isArmed ? null : payload);
       }
       return;
@@ -494,7 +497,7 @@ export function PieceCanvasEditor({
       {selectedPiece && (
         <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
           <span className="text-[var(--color-text)]">
-            Ausgewählt: {formatMeters(selectedPiece.w, 1)}×{formatMeters(selectedPiece.d, 1)} m
+            Ausgewählt: {formatMeters(selectedPiece.w, 2)}×{formatMeters(selectedPiece.d, 2)} m
           </span>
           <div className="flex gap-2">
             <button
@@ -660,7 +663,7 @@ export function PieceCanvasEditor({
               onPointerUp={() => handlePiecePointerUp(p)}
             >
               <title>
-                {formatMeters(p.w, 1)}×{formatMeters(p.d, 1)} m bei x={formatMeters(p.x, 1)}, y={formatMeters(p.y, 1)} m
+                {formatMeters(p.w, 2)}×{formatMeters(p.d, 2)} m bei x={formatMeters(p.x, 2)}, y={formatMeters(p.y, 2)} m
               </title>
             </PieceShape>
           );
@@ -704,42 +707,95 @@ export function PieceCanvasEditor({
       </svg>
 
       <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: 'var(--font-display)' }}>
+        {/* Breite-Leiste */}
         <div className="flex rounded-md border border-[var(--color-panel-stroke)] overflow-hidden">
-          {CATALOG_OPTIONS.map((opt, idx) => {
-            const payload: ToolPayload = { kind: 'piece', w: opt.w, d: opt.d };
-            const isArmed = armed != null && matchesOption(armed, opt);
-            // Nur die Breite zeigen reicht für die Hauptplatte (einzige 2-m-Option, eindeutig) —
-            // bei Sondermaß-Stücken muss auch die Tiefe mit rein, sonst sähen die neue 0,5×2- und
-            // die bestehende 0,5×1-Platte optisch identisch aus ("0,5 m" für beide).
-            const label = opt.isSondermass ? `${formatMeters(opt.w, 1)}×${formatMeters(opt.d, 1)} m` : `${formatMeters(opt.w, 1)} m`;
-            return (
-              <button
-                key={`${opt.w}x${opt.d}`}
-                type="button"
-                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-                onPointerMove={handlePaletteButtonPointerMove}
-                onPointerUp={handlePaletteButtonPointerUp}
-                onKeyDown={handlePaletteButtonKeyDown}
-                onClick={() => {
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  arm(isArmed ? null : payload);
-                }}
-                aria-pressed={isArmed}
-                aria-label={`Stück ${label} ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                className={`px-3 py-1.5 text-sm cursor-pointer select-none touch-none ${idx > 0 ? 'border-l border-[var(--color-panel-stroke)]' : ''} ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-panel-fill)]'
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+          {PALETTE_WIDTHS.map((w, idx) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => {
+                let newD = paletteD;
+                if (!isCatalogRect(w, newD)) {
+                  const validDepths = PALETTE_DEPTHS.filter((d) => isCatalogRect(w, d));
+                  newD = validDepths[0] ?? 0.39;
+                }
+                setPaletteW(w);
+                setPaletteD(newD);
+                const newPayload: ToolPayload = { kind: 'piece', w, d: newD };
+                arm(paletteW === w && paletteD === newD && armed?.kind === 'piece' ? null : newPayload);
+              }}
+              aria-pressed={paletteW === w}
+              className={`px-3 py-1.5 text-sm cursor-pointer select-none touch-none ${idx > 0 ? 'border-l border-[var(--color-panel-stroke)]' : ''} ${
+                paletteW === w
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-panel-fill)]'
+              }`}
+            >
+              {formatMeters(w, 1)} m
+            </button>
+          ))}
         </div>
+
+        {/* Tiefe-Leiste */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-[var(--color-text-muted)]">Tiefe:</span>
+          <div className="flex rounded-md border border-[var(--color-panel-stroke)] overflow-hidden" title="Echte NivTec-Standardtiefen 100/75/50/39 cm">
+            {PALETTE_DEPTHS.map((d, idx) => {
+              const isDisabled = !isCatalogRect(paletteW, d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    setPaletteD(d);
+                    const newPayload: ToolPayload = { kind: 'piece', w: paletteW, d };
+                    arm(paletteD === d && armed?.kind === 'piece' ? null : newPayload);
+                  }}
+                  aria-pressed={paletteD === d}
+                  className={`px-3 py-1.5 text-sm cursor-pointer select-none touch-none disabled:opacity-40 disabled:cursor-not-allowed ${idx > 0 ? 'border-l border-[var(--color-panel-stroke)]' : ''} ${
+                    paletteD === d
+                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                      : 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-panel-fill)]'
+                  }`}
+                >
+                  {formatMeters(d, 2)} m
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Platzier-Button */}
+        {(() => {
+          const payload: ToolPayload = { kind: 'piece', w: paletteW, d: paletteD };
+          const isArmed = armed?.kind === 'piece' && armed.w === paletteW && armed.d === paletteD;
+          return (
+            <button
+              type="button"
+              onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
+              onPointerMove={handlePaletteButtonPointerMove}
+              onPointerUp={handlePaletteButtonPointerUp}
+              onKeyDown={handlePaletteButtonKeyDown}
+              onClick={() => {
+                if (suppressNextClickRef.current) {
+                  suppressNextClickRef.current = false;
+                  return;
+                }
+                arm(isArmed ? null : payload);
+              }}
+              aria-pressed={isArmed}
+              aria-label={`Stück ${formatMeters(paletteW, 1)}×${formatMeters(paletteD, 2)} m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
+              className={`px-3 py-1.5 text-sm rounded-md cursor-pointer select-none touch-none border ${
+                isArmed
+                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
+                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:bg-[var(--color-panel-fill)]'
+              }`}
+            >
+              {formatMeters(paletteW, 1)}×{formatMeters(paletteD, 2)} m
+            </button>
+          );
+        })()}
 
         {armed?.kind === 'piece' && (
           <button
