@@ -1,4 +1,5 @@
 import PptxGenJS from 'pptxgenjs';
+import { boundingBoxOf } from '../domain/customShape';
 import type { LabeledFootPosition } from '../domain/feet';
 import { footColorForHeight } from '../domain/footColorScale';
 import type { LayoutResult, TriangleCorner } from '../domain/types';
@@ -43,12 +44,15 @@ interface Region {
   h: number;
 }
 
-/** Zeichnet einen Grundriss (Platten als Rechteck-Shapes, Füße als Kreis-Shapes) skaliert in einen Bereich der Folie. */
+/** Zeichnet einen Grundriss (Platten als Rechteck-Shapes, Füße als Kreis-Shapes) skaliert in einen
+ *  Bereich der Folie — eng um die tatsächlich belegte Fläche, nicht ab dem Ursprung gemessen (sonst
+ *  würden Maße und Leerraum schon von der bloßen Lage auf der Zeichenfläche abhängen). */
 function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Region): void {
   const { layout, feet, heightCm, label } = section;
-  if (layout.widthM <= 0 || layout.depthM <= 0) return;
+  const box = boundingBoxOf(layout.panels);
+  if (!box || box.widthM <= 0 || box.depthM <= 0) return;
 
-  const dims = `${layout.widthM.toFixed(2)} × ${layout.depthM.toFixed(2)} m, BH ${heightCm} cm`;
+  const dims = `${box.widthM.toFixed(2)} × ${box.depthM.toFixed(2)} m, BH ${heightCm} cm`;
   slide.addText(label ? `${label} — ${dims}` : dims, {
     x: region.x,
     y: region.y,
@@ -62,11 +66,11 @@ function drawSection(slide: PptxGenJS.Slide, section: PptxSection, region: Regio
 
   const drawableY = region.y + SECTION_LABEL_H_IN;
   const drawableH = region.h - SECTION_LABEL_H_IN;
-  const scale = Math.min(region.w / layout.widthM, drawableH / layout.depthM);
-  const drawnW = layout.widthM * scale;
-  const drawnH = layout.depthM * scale;
-  const offsetX = region.x + (region.w - drawnW) / 2;
-  const offsetY = drawableY + (drawableH - drawnH) / 2;
+  const scale = Math.min(region.w / box.widthM, drawableH / box.depthM);
+  const drawnW = box.widthM * scale;
+  const drawnH = box.depthM * scale;
+  const offsetX = region.x + (region.w - drawnW) / 2 - box.x * scale;
+  const offsetY = drawableY + (drawableH - drawnH) / 2 - box.y * scale;
 
   for (const p of layout.panels) {
     if (p.corner !== undefined) {

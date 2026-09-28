@@ -1,3 +1,4 @@
+import { boundingBoxOf } from '../../domain/customShape';
 import type { LabeledFootPosition } from '../../domain/feet';
 import { footColorForHeight } from '../../domain/footColorScale';
 import { trianglePoints } from '../../domain/triangle';
@@ -46,8 +47,11 @@ export function FloorPlanSVG({
   const pad = 0.8;
   const effectiveWidthM = Math.max(widthM, minWidthM ?? 0);
   const viewBox = `${-pad} ${-pad} ${effectiveWidthM + pad * 2} ${depthM + pad * 2}`;
+  // Beschriftung zeigt die tatsächlich belegte Fläche — widthM/depthM zählen ab dem Ursprung
+  // auch einen Versatz auf der Zeichenfläche mit (z.B. eine verschobene Tresen-Ebene).
+  const footprint = boundingBoxOf(panels);
 
-  if (widthM <= 0 || depthM <= 0) return null;
+  if (widthM <= 0 || depthM <= 0 || !footprint) return null;
 
   return (
     <div className="space-y-1.5">
@@ -185,14 +189,14 @@ export function FloorPlanSVG({
           );
         })}
       <text
-        x={widthM / 2}
+        x={footprint.x + footprint.widthM / 2}
         y={-pad + 0.3}
         fontSize={0.28}
         textAnchor="middle"
         fill="var(--color-text-muted)"
         fontFamily="var(--font-mono)"
       >
-        {widthM.toFixed(2)} × {depthM.toFixed(2)} m
+        {footprint.widthM.toFixed(2)} × {footprint.depthM.toFixed(2)} m
       </text>
       {railingConfigurable &&
         (Object.keys(SIDE_LABELS) as RailingSide[]).map((side) => {

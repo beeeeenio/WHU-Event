@@ -1,4 +1,5 @@
 import { countHorizontalBraces } from './bracing';
+import { boundingBoxOf } from './customShape';
 import { countFeet } from './feet';
 import { articleNumberFor, TRIANGLE_SIZE_KEY } from './panels';
 import { isBracingRequired, isHorizontalBracingRequired } from './rules';
@@ -54,6 +55,14 @@ export function buildMaterialList({
   const items: MaterialListItem[] = [];
   let pos = 1;
 
+  // layout.widthM/depthM messen vom Ursprung aus — nur den Leerraum links/vorne bis zum ersten
+  // Stück herausrechnen, sonst würde schon das bloße Verschieben einer Fläche auf der
+  // Zeichenfläche Geländer- und Verstrebungsmengen ändern. Für am Ursprung liegende Layouts (der
+  // Normalfall, inkl. aller computeLayout-Ergebnisse) ist das exakt layout.widthM/depthM.
+  const origin = boundingBoxOf(layout.panels);
+  const spanWidthM = layout.widthM - (origin?.x ?? 0);
+  const spanDepthM = layout.depthM - (origin?.y ?? 0);
+
   const sizeKeys = Object.keys(layout.panelCountsBySize).sort();
   for (const key of sizeKeys) {
     if (key === TRIANGLE_SIZE_KEY) {
@@ -97,7 +106,7 @@ export function buildMaterialList({
   if (activeRailingSides.length > 0) {
     const segmentCounts = new Map<number, number>();
     for (const side of activeRailingSides) {
-      const length = side === 'links' || side === 'rechts' ? layout.depthM : layout.widthM;
+      const length = side === 'links' || side === 'rechts' ? spanDepthM : spanWidthM;
       for (const seg of splitIntoElements(length)) {
         segmentCounts.set(seg, (segmentCounts.get(seg) ?? 0) + 1);
       }
@@ -136,7 +145,7 @@ export function buildMaterialList({
       // die exakte Abstandsregel (max. X freie Felder je Achse) wird nicht nachgebildet.
       const heightM = heightCm / 100;
       const diagonalLengthMm = Math.round(Math.sqrt(2 ** 2 + heightM ** 2) * 1000);
-      const perimeter = 2 * (layout.widthM + layout.depthM);
+      const perimeter = 2 * (spanWidthM + spanDepthM);
       const bracingCount = Math.max(1, Math.ceil(perimeter / 2));
       items.push({
         pos: pos++,

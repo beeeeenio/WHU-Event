@@ -234,13 +234,37 @@ export function buildLayoutFromPieces(pieces: Piece2D[]): LayoutResult {
  * Umriss der jeweils ANDEREN Ebene gedacht — sonst zeigt der Umriss eine Fläche, in der die
  * echten Platten gar nicht liegen, sobald eine Ebene versetzt statt bündig gebaut wurde.
  */
-export function boundingBoxOf(panels: PanelInstance[]): { x: number; y: number; widthM: number; depthM: number } | null {
+export function boundingBoxOf(
+  panels: ReadonlyArray<{ x: number; y: number; w: number; d: number }>,
+): { x: number; y: number; widthM: number; depthM: number } | null {
   if (panels.length === 0) return null;
   const minX = Math.min(...panels.map((p) => p.x));
   const minY = Math.min(...panels.map((p) => p.y));
   const maxX = Math.max(...panels.map((p) => p.x + p.w));
   const maxY = Math.max(...panels.map((p) => p.y + p.d));
   return { x: round3(minX), y: round3(minY), widthM: round3(maxX - minX), depthM: round3(maxY - minY) };
+}
+
+/**
+ * "Alles verschieben": verschiebt alle Stücke gemeinsam waagerecht um dx Meter. Die Stücke
+ * bleiben untereinander unverändert, können also nicht neu kollidieren. null, wenn dabei ein
+ * Stück links über x=0 hinausrutschen würde — negative Koordinaten gibt es im Plan nicht.
+ */
+export function shiftPieces(pieces: Piece2D[], dx: number): Piece2D[] | null {
+  if (pieces.some((p) => p.x + dx < -EPS)) return null;
+  return pieces.map((p) => ({ ...p, x: round3(p.x + dx) }));
+}
+
+/**
+ * Rückt die Stücke so, dass das linkeste an x=0 und das vorderste an y=0 liegt — für alles, was
+ * aus dem Plan abgeleitet wird (Grundriss, 3D, PPTX, Materialliste, Kennzahlen). Sonst zählt die
+ * bloße Lage auf der Zeichenfläche (z.B. nach "Alles verschieben") als Leerraum mit, weil
+ * buildLayoutFromPieces Breite/Tiefe immer vom Ursprung aus misst.
+ */
+export function normalizeToOrigin(pieces: Piece2D[]): Piece2D[] {
+  const box = boundingBoxOf(pieces);
+  if (!box || (Math.abs(box.x) < EPS && Math.abs(box.y) < EPS)) return pieces;
+  return pieces.map((p) => ({ ...p, x: round3(p.x - box.x), y: round3(p.y - box.y) }));
 }
 
 /**

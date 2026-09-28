@@ -16,6 +16,7 @@ import {
   fillHorizontalSpan,
   makePieceId,
   rotatePieceInPlace,
+  shiftPieces,
   type FilledPiece,
   type Piece2D,
 } from '../../domain/customShape';
@@ -131,6 +132,9 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   function baseRotatePiece(id: string) {
     setBasePieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
   }
+  function baseShiftAll(dx: number) {
+    setBasePieces((prev) => shiftPieces(prev, dx) ?? prev);
+  }
 
   function topAddPieces(newPieces: FilledPiece[]) {
     setTopPieces((prev) => [...prev, ...newPieces.map((p) => ({ ...p, id: makePieceId() }))]);
@@ -144,6 +148,9 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   function topRotatePiece(id: string) {
     setTopPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
   }
+  function topShiftAll(dx: number) {
+    setTopPieces((prev) => shiftPieces(prev, dx) ?? prev);
+  }
 
   // Setzt die Thekenplatte auf dieselbe Breite wie der aktuelle Unterbau, bei halber Tiefe —
   // ersetzt den bisherigen Inhalt der Ebene komplett (kein Zusammenführen), da das eine bewusste
@@ -156,9 +163,11 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
   // isSondermassPiece/catalogSizeKey nicht erkannt wurden (nur eine feste (w,d)-Reihenfolge
   // geprüft) — dort behoben, nicht hier.
   function setThekeToHalfDepth() {
-    if (baseLayout.widthM <= 0 || baseLayout.depthM <= 0) return;
-    const targetDepthM = Math.max(0.5, Math.round(baseLayout.depthM / 2 / 0.5) * 0.5);
-    const filled = fillHorizontalSpan(baseLayout.widthM, targetDepthM, 0, 0);
+    // Echte Lage und Größe des Unterbaus (nicht vom Ursprung aus gemessen) — sonst landet die
+    // Thekenplatte nach "Alles verschieben" des Unterbaus zu breit und am falschen Fleck.
+    if (!baseBoundingBox) return;
+    const targetDepthM = Math.max(0.5, Math.round(baseBoundingBox.depthM / 2 / 0.5) * 0.5);
+    const filled = fillHorizontalSpan(baseBoundingBox.widthM, targetDepthM, baseBoundingBox.x, baseBoundingBox.y);
     setTopPieces(filled.map((p) => ({ ...p, id: makePieceId() })));
   }
 
@@ -203,6 +212,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           onRemovePiece={baseRemovePiece}
           onMovePiece={baseMovePiece}
           onRotatePiece={baseRotatePiece}
+          onShiftAll={baseShiftAll}
           frontEdgeLabel="Unterbau-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={topBoundingBox ? { ...topBoundingBox, label: 'Thekenplatte' } : undefined}
@@ -251,6 +261,7 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           onRemovePiece={topRemovePiece}
           onMovePiece={topMovePiece}
           onRotatePiece={topRotatePiece}
+          onShiftAll={topShiftAll}
           frontEdgeLabel="Thekenplatten-Vorderkante"
           minCanvasWidthM={sharedCanvasWidthM}
           referenceFootprint={baseBoundingBox ? { ...baseBoundingBox, label: 'Unterbau' } : undefined}
@@ -302,7 +313,10 @@ export function TresenConfigurator({ ci }: { ci: CiId }) {
           {resultTab === 'kennzahlen' && (
             <SummaryStats
               stats={[
-                { label: 'Unterbaugröße', value: `${baseLayout.widthM.toFixed(2)} × ${baseLayout.depthM.toFixed(2)} m` },
+                {
+                  label: 'Unterbaugröße',
+                  value: `${(baseBoundingBox?.widthM ?? 0).toFixed(2)} × ${(baseBoundingBox?.depthM ?? 0).toFixed(2)} m`,
+                },
                 { label: 'Gesamthöhe (ca.)', value: `${totalHeightCm} cm` },
                 { label: 'Podeste gesamt', value: `${baseLayout.panels.length + topLayout.panels.length}` },
                 { label: 'Füße gesamt', value: `${baseTotalFeet + topTotalFeet}` },

@@ -11,7 +11,15 @@ import { SavedConfigsPanel } from '../../components/shared/SavedConfigsPanel';
 import { StairsRampCalculator } from '../../components/shared/StairsRampCalculator';
 import { SummaryStats } from '../../components/shared/SummaryStats';
 import { WarningBanner } from '../../components/shared/WarningBanner';
-import { buildLayoutFromPieces, makePieceId, rotatePieceInPlace, type FilledPiece, type Piece2D } from '../../domain/customShape';
+import {
+  buildLayoutFromPieces,
+  makePieceId,
+  normalizeToOrigin,
+  rotatePieceInPlace,
+  shiftPieces,
+  type FilledPiece,
+  type Piece2D,
+} from '../../domain/customShape';
 import { isRailingRequired, STRUCTURE_RULES } from '../../domain/rules';
 import type { TriangleCorner } from '../../domain/types';
 import { useDerivedGeometry } from '../../hooks/useDerivedGeometry';
@@ -44,7 +52,10 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
   const [resultTab, setResultTab] = useState<ResultTab>('kennzahlen');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const layout = useMemo(() => buildLayoutFromPieces(pieces), [pieces]);
+  // Alles Abgeleitete (Kennzahlen, Grundriss, 3D, PPTX, Materialliste) sieht die Bühne an (0,0) —
+  // wo sie auf der Zeichenfläche liegt ("Alles verschieben"), soll dort nichts verändern. Der
+  // Editor selbst bekommt weiter die echten Positionen.
+  const layout = useMemo(() => buildLayoutFromPieces(normalizeToOrigin(pieces)), [pieces]);
 
   // Kastenbühne ist regeltechnisch eine ganz normale Bühne (gleiche Höhenserie,
   // Verstrebungs-/Geländerschwellen) — nur der Bauweg dahin ist ein anderer.
@@ -67,6 +78,10 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
 
   function rotatePiece(id: string) {
     setPieces((prev) => prev.map((p) => (p.id === id ? rotatePieceInPlace(p) : p)));
+  }
+
+  function shiftAll(dx: number) {
+    setPieces((prev) => shiftPieces(prev, dx) ?? prev);
   }
 
   function applySavedState(data: KastenbuehneSavedState) {
@@ -114,6 +129,7 @@ export function KastenbuehneConfigurator({ ci }: { ci: CiId }) {
           onRemovePiece={removePiece}
           onMovePiece={movePiece}
           onRotatePiece={rotatePiece}
+          onShiftAll={shiftAll}
           frontEdgeLabel="Vorderkante"
         />
         <PlacedPiecesChips pieces={pieces} onRemovePiece={removePiece} />

@@ -9,7 +9,9 @@ import {
   findFreePosition,
   fitsAllAt,
   fitsAt,
+  normalizeToOrigin,
   rotatePieceInPlace,
+  shiftPieces,
   wedgePiecesAt,
   type Piece2D,
 } from '../customShape';
@@ -290,5 +292,51 @@ describe('rotatePieceInPlace', () => {
   it('wechselt bei einem Dreieck die Ecke, lässt w/d/Position unverändert', () => {
     const rotated = rotatePieceInPlace(trianglePiece('a', 3, 4, 'tl'));
     expect(rotated).toMatchObject({ x: 3, y: 4, w: 1, d: 1, corner: 'tr' });
+  });
+});
+
+describe('shiftPieces', () => {
+  it('verschiebt alle Stücke gemeinsam waagerecht, alles andere bleibt gleich', () => {
+    const shifted = shiftPieces([piece('a', 0, 0, 2, 1), trianglePiece('b', 2, 1, 'bl')], 0.5);
+    expect(shifted).toEqual([
+      { id: 'a', x: 0.5, y: 0, w: 2, d: 1 },
+      { id: 'b', x: 2.5, y: 1, w: 1, d: 1, corner: 'bl' },
+    ]);
+  });
+
+  it('darf bis genau an den linken Rand (x=0) schieben', () => {
+    expect(shiftPieces([piece('a', 0.5, 0, 2, 1), piece('b', 2.5, 0, 1, 1)], -0.5)).toEqual([
+      { id: 'a', x: 0, y: 0, w: 2, d: 1 },
+      { id: 'b', x: 2, y: 0, w: 1, d: 1 },
+    ]);
+  });
+
+  it('lehnt ab (null), sobald auch nur ein Stück links über x=0 hinaus müsste', () => {
+    expect(shiftPieces([piece('a', 0, 0, 2, 1), piece('b', 3, 0, 1, 1)], -0.5)).toBeNull();
+  });
+});
+
+describe('normalizeToOrigin', () => {
+  it('rückt eine versetzt gebaute Fläche an (0,0), Abstände untereinander bleiben', () => {
+    expect(normalizeToOrigin([piece('a', 2, 0.5, 2, 1), piece('b', 4, 0.5, 1, 1)])).toEqual([
+      { id: 'a', x: 0, y: 0, w: 2, d: 1 },
+      { id: 'b', x: 2, y: 0, w: 1, d: 1 },
+    ]);
+  });
+
+  it('lässt eine schon am Ursprung liegende oder leere Fläche unverändert', () => {
+    const atOrigin = [piece('a', 0, 0, 2, 1)];
+    expect(normalizeToOrigin(atOrigin)).toBe(atOrigin);
+    expect(normalizeToOrigin([])).toEqual([]);
+  });
+
+  it('macht das abgeleitete Layout unabhängig davon, wo die Fläche auf dem Plan liegt', () => {
+    const original = [piece('a', 0, 0, 2, 1), piece('b', 2, 0, 2, 1)];
+    const moved = shiftPieces(original, 1.5)!;
+    const a = buildLayoutFromPieces(normalizeToOrigin(original));
+    const b = buildLayoutFromPieces(normalizeToOrigin(moved));
+    expect(b.widthM).toBe(a.widthM);
+    expect(b.depthM).toBe(a.depthM);
+    expect(b.panels).toEqual(a.panels);
   });
 });

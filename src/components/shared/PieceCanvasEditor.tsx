@@ -6,6 +6,7 @@ import {
   findFreePosition,
   fitsAllAt,
   fitsAt,
+  shiftPieces,
   wedgePiecesAt,
   type CatalogPieceOption,
   type FilledPiece,
@@ -27,6 +28,9 @@ interface Props {
   onRemovePiece: (id: string) => void;
   onMovePiece: (id: string, x: number, y: number) => void;
   onRotatePiece: (id: string) => void;
+  /** Verschiebt alle Stücke dieses Plans gemeinsam waagerecht um dx Meter ("Alles verschieben").
+   *  Wird nur aufgerufen, wenn dabei nichts links über x=0 hinausrutscht (siehe shiftPieces). */
+  onShiftAll: (dx: number) => void;
   /** Beschriftung über der Kante, an der y=0 liegt (z.B. "Bühnenvorderkante"). */
   frontEdgeLabel?: string;
   /** Erzwingt eine Mindest-viewBox-Breite — z.B. damit zwei Ebenen (Tresen: Unterbau +
@@ -173,6 +177,7 @@ export function PieceCanvasEditor({
   onRemovePiece,
   onMovePiece,
   onRotatePiece,
+  onShiftAll,
   frontEdgeLabel = 'Vorderkante',
   minCanvasWidthM,
   referenceFootprint,
@@ -497,6 +502,17 @@ export function PieceCanvasEditor({
     setSelectedId(null);
   }
 
+  const canShiftLeft = pieces.length > 0 && shiftPieces(pieces, -GRID_STEP_M) !== null;
+
+  function shiftAll(dx: number) {
+    if (pieces.length === 0) return;
+    if (dx < 0 && !canShiftLeft) {
+      showBlockedMessage('Weiter nach links geht nicht — die Fläche liegt schon am linken Rand.');
+      return;
+    }
+    onShiftAll(dx);
+  }
+
   const ARROW_DELTA: Partial<Record<string, [number, number]>> = {
     ArrowUp: [0, -GRID_STEP_M],
     ArrowDown: [0, GRID_STEP_M],
@@ -532,6 +548,13 @@ export function PieceCanvasEditor({
       } else if (armed?.kind === 'triangle') {
         setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner) } : cur));
       }
+      return;
+    }
+    // Umschalt+←/→ verschiebt immer die ganze Fläche, auch wenn gerade ein Stück ausgewählt ist —
+    // ohne Umschalt bleibt es beim bisherigen Nudge des Einzelstücks bzw. Tastatur-Cursors.
+    if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      shiftAll(e.key === 'ArrowLeft' ? -GRID_STEP_M : GRID_STEP_M);
       return;
     }
     const delta = ARROW_DELTA[e.key];
@@ -1090,6 +1113,35 @@ export function PieceCanvasEditor({
             ))}
           </div>
         )}
+
+        {pieces.length > 0 && (
+          <div className="flex items-center gap-1.5 ml-auto" role="group" aria-label="Ganze Fläche verschieben">
+            <span className="text-xs text-[var(--color-text-muted)]">Alles verschieben</span>
+            <button
+              type="button"
+              onClick={() => shiftAll(-GRID_STEP_M)}
+              disabled={!canShiftLeft}
+              title={
+                canShiftLeft
+                  ? 'Alle Stücke gemeinsam 0,5 m nach links (Umschalt+←)'
+                  : 'Die Fläche liegt schon am linken Rand'
+              }
+              aria-label="Alle Stücke 0,5 m nach links verschieben"
+              className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => shiftAll(GRID_STEP_M)}
+              title="Alle Stücke gemeinsam 0,5 m nach rechts (Umschalt+→)"
+              aria-label="Alle Stücke 0,5 m nach rechts verschieben"
+              className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
+            >
+              →
+            </button>
+          </div>
+        )}
       </div>
 
       <details className="text-xs text-[var(--color-text-muted)]">
@@ -1101,6 +1153,10 @@ export function PieceCanvasEditor({
           </li>
           <li>
             <kbd className="rounded border border-[var(--color-border)] px-1">↑↓←→</kbd> Cursor/Stück bewegen
+          </li>
+          <li>
+            <kbd className="rounded border border-[var(--color-border)] px-1">Umschalt</kbd>+
+            <kbd className="rounded border border-[var(--color-border)] px-1">←→</kbd> ganze Fläche verschieben
           </li>
           <li>
             <kbd className="rounded border border-[var(--color-border)] px-1">Enter</kbd> platzieren
