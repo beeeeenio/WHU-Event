@@ -19,7 +19,7 @@ Eine Bühne, Theke, Tisch oder Tribüne (alle vier Aufbautypen existieren im Cod
 | 0,5×2 m | Sondermaß für die feste 2-m-Achse | – |
 | 1×1 m, rechtwinkliges Dreieck | Diagonale Ecken/Spitzen | 112 05 0 |
 
-Jede Platte ist **frei drehbar** (2×1 oder gedreht 1×2 ist derselbe Artikel) und liegt auf einem 0,5-m-Raster. Das Dreieckpodest hat dieselbe Bounding-Box wie das 1×1-Rechteck, aber nur 3 echte Ecken (eine "Phantom"-Ecke ohne Material, je nach `corner`-Wert: `tl`/`tr`/`bl`/`br`).
+Jede Platte ist **frei drehbar** (2×1 oder gedreht 1×2 ist derselbe Artikel) und liegt auf einem 0,5-m-Raster. Das Dreieckpodest füllt nur die halbe Bounding-Box (1×1, oder 2×1/1×2 beim großen Dreieck): `corner` ist die Ecke MIT dem rechten Winkel, die diagonal gegenüberliegende Ecke ist die "Phantom"-Ecke ohne Material. Die Hypotenuse verbindet die beiden Nachbarecken. Es gibt keine separate Rotationsangabe — Drehen = `corner` weiterschalten (tl→tr→br→bl) und bei 2×1 `w`/`d` tauschen. Beim Viertelkreis (`shape: 'viertelkreis'`) liegt der Kreismittelpunkt an `corner`, der Bogen läuft Richtung Phantom-Ecke.
 
 ## Wie ein Stück im Raum liegt
 
@@ -32,7 +32,8 @@ interface Piece2D {
   y: number;
   w: number;         // Breite in Metern
   d: number;         // Tiefe in Metern
-  corner?: 'tl' | 'tr' | 'bl' | 'br';  // nur beim Dreieckpodest gesetzt
+  corner?: 'tl' | 'tr' | 'bl' | 'br';  // nur bei Dreieck/Viertelkreis: Ecke der Bounding-Box MIT dem rechten Winkel
+  shape?: 'viertelkreis';               // nur beim Viertelkreis (R 1 m, w=d=1); corner = Kreismittelpunkt
 }
 ```
 
