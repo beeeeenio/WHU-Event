@@ -6,8 +6,8 @@ import {
   type FilledPiece,
   type Piece2D,
 } from '../../domain/customShape';
-import { isCatalogRect, isSondermassPiece, TRIANGLE_PANEL_SIZE_M, QUARTER_CIRCLE_RADIUS_M, CATALOG_WIDTHS_M, CATALOG_DEPTHS_M } from '../../domain/panels';
-import { nextTriangleCorner, quarterCirclePath, triangleHand, trianglePoints } from '../../domain/triangle';
+import { isSondermassPiece, TRIANGLE_PANEL_SIZE_M, QUARTER_CIRCLE_RADIUS_M, RECT_CATALOG } from '../../domain/panels';
+import { mirrorTriangleCornerDiagonal, nextTriangleCorner, quarterCirclePath, triangleHand, trianglePoints } from '../../domain/triangle';
 import type { TriangleCorner } from '../../domain/types';
 import { formatMeters } from '../../lib/format';
 
@@ -53,8 +53,58 @@ function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }
 
-const PALETTE_WIDTHS = [...CATALOG_WIDTHS_M, 0.5] as const;
-const PALETTE_DEPTHS = [...CATALOG_DEPTHS_M] as const;
+const ACTION_BTN =
+  'px-2.5 py-1 rounded-md text-sm border border-[var(--color-panel-stroke)] bg-[var(--color-surface)] text-[var(--color-text)] cursor-pointer select-none enabled:hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed';
+
+const QUICK_WIDTHS = [2, 1.5, 1, 0.5] as const;
+
+const fmtDim = (v: number) => String(Math.round(v * 100) / 100).replace('.', ',');
+
+interface GalleryTile {
+  key: string;
+  label: string;
+  payload: ToolPayload;
+  geometry: ShapeGeometry;
+}
+
+const GALLERY_GROUPS: { title: string; tiles: GalleryTile[] }[] = [
+  {
+    title: 'Rechtecke',
+    tiles: [...RECT_CATALOG]
+      .sort((a, b) => b.w - a.w || b.d - a.d)
+      .map((r) => ({
+        key: `rect-${r.w}x${r.d}`,
+        label: `${fmtDim(r.w)}×${fmtDim(r.d)}`,
+        payload: { kind: 'piece', w: r.w, d: r.d } as ToolPayload,
+        geometry: { x: 0, y: 0, w: r.w, d: r.d },
+      })),
+  },
+  {
+    title: 'Dreiecke',
+    tiles: [
+      { key: 'tri-1x1', label: '1×1', payload: { kind: 'triangle', corner: 'tl', w: 1, d: 1 }, geometry: { x: 0, y: 0, w: 1, d: 1, corner: 'tl' } },
+      { key: 'tri-2x1', label: '2×1', payload: { kind: 'triangle', corner: 'tl', w: 2, d: 1 }, geometry: { x: 0, y: 0, w: 2, d: 1, corner: 'tl' } },
+    ],
+  },
+  {
+    title: 'Rund',
+    tiles: [
+      {
+        key: 'quarter',
+        label: 'Viertelkreis R1',
+        payload: { kind: 'viertelkreis', corner: 'tl' },
+        geometry: { x: 0, y: 0, w: QUARTER_CIRCLE_RADIUS_M, d: QUARTER_CIRCLE_RADIUS_M, corner: 'tl', shape: 'viertelkreis' },
+      },
+    ],
+  },
+];
+
+function payloadMatches(armed: ToolPayload | null, tile: ToolPayload): boolean {
+  if (!armed || armed.kind !== tile.kind) return false;
+  if (armed.kind === 'piece' && tile.kind === 'piece') return armed.w === tile.w && armed.d === tile.d;
+  if (armed.kind === 'triangle' && tile.kind === 'triangle') return armed.w === tile.w && armed.d === tile.d;
+  return true;
+}
 
 interface ShapeGeometry {
   x: number;
@@ -186,8 +236,6 @@ export function PieceCanvasEditor({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
-  const [paletteW, setPaletteW] = useState(2);
-  const [paletteD, setPaletteD] = useState(1);
   // Ein Button hat natives Klick-Verhalten, das nach einem echten Ziehen trotzdem feuert
   // (Pointer-Events und das nachfolgende `click` sind getrennte, aufeinanderfolgende Dinge,
   // auch bei Pointer-Capture). Ein Ref statt State, damit der Wert synchron und ohne
@@ -442,6 +490,29 @@ export function PieceCanvasEditor({
     onRotatePiece(selectedPiece.id);
   }
 
+  function rotateCurrent() {
+    if (armed) {
+      setArmedState((cur) => {
+        if (!cur) return cur;
+        if (cur.kind === 'piece') return { kind: 'piece', w: cur.d, d: cur.w };
+        if (cur.kind === 'triangle') return { kind: 'triangle', corner: nextTriangleCorner(cur.corner), w: cur.d, d: cur.w };
+        return { kind: 'viertelkreis', corner: nextTriangleCorner(cur.corner) };
+      });
+      return;
+    }
+    rotateSelected();
+  }
+
+  function mirrorCurrent() {
+    if (armed?.kind === 'triangle') {
+      setArmedState((cur) =>
+        cur?.kind === 'triangle' ? { kind: 'triangle', corner: mirrorTriangleCornerDiagonal(cur.corner), w: cur.d, d: cur.w } : cur,
+      );
+      return;
+    }
+    if (selectedPiece && onMirrorPiece) onMirrorPiece(selectedPiece.id);
+  }
+
   function removeSelected() {
     if (selectedIds.length === 0) return;
     selectedIds.forEach((id) => onRemovePiece(id));
@@ -471,7 +542,7 @@ export function PieceCanvasEditor({
   // Pfeiltasten bewegen wahlweise ein ausgewähltes Stück (Nudge, blockiert bei Kollision statt
   // zu verschieben) oder — bei bewaffnetem Werkzeug — einen Tastatur-Cursor (dieselbe pointerPos,
   // die auch die Maus-Vorschau treibt), Enter/Leertaste platziert dort. R dreht, Entf/Rücktaste
-  // entfernt, Esc bricht ab. 1–5 wählen die Plattengrößen in derselben Reihenfolge wie die
+  // entfernt, Esc bricht ab. 1–4 wählen die Plattengrößen in derselben Reihenfolge wie die
   // Segmented-Control, T bewaffnet das Dreieckpodest.
   function handleCanvasKeyDown(e: React.KeyboardEvent<SVGSVGElement>) {
     if (e.key === 'Escape') {
@@ -540,22 +611,10 @@ export function PieceCanvasEditor({
       return;
     }
     if (/^[1-4]$/.test(e.key)) {
-      const idx = Number(e.key) - 1;
-      const widths = [...PALETTE_WIDTHS];
-      if (idx < widths.length) {
-        e.preventDefault();
-        const newW = widths[idx];
-        let newD = paletteD;
-        if (!isCatalogRect(newW, newD)) {
-          const validDepths = PALETTE_DEPTHS.filter((d) => isCatalogRect(newW, d));
-          newD = validDepths[0] ?? 0.39;
-        }
-        setPaletteW(newW);
-        setPaletteD(newD);
-        const isArmed = armed?.kind === 'piece' && armed.w === newW && armed.d === newD;
-        const payload: ToolPayload = { kind: 'piece', w: newW, d: newD };
-        arm(isArmed ? null : payload);
-      }
+      e.preventDefault();
+      const w = QUICK_WIDTHS[Number(e.key) - 1];
+      const payload: ToolPayload = { kind: 'piece', w, d: 1 };
+      arm(payloadMatches(armed, payload) ? null : payload);
       return;
     }
     if (e.key.toLowerCase() === 't') {
@@ -567,78 +626,98 @@ export function PieceCanvasEditor({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-[var(--color-text-muted)]">
-        Ziehe ein Stück direkt aus der Leiste unten auf den Plan — oder klicke es erst an und dann
-        auf die gewünschte Stelle. Ein vorhandenes Stück kannst du direkt ziehen, um es zu verschieben, oder
-        anklicken, um es zu drehen oder zu entfernen. Nach einem Klick auf den Plan geht es auch per Tastatur
-        (Kurzbefehle unten).
-      </p>
-
-      {armed && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-accent)]">
-          <span>Jetzt im Plan unten auf die gewünschte Stelle klicken.</span>
-          <button type="button" onClick={() => arm(null)} className="shrink-0 text-xs underline">
-            Abbrechen
+      <div
+        role="toolbar"
+        aria-label="Aktionen"
+        className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2"
+      >
+        <span role="status" className="mr-1 text-xs text-[var(--color-text-muted)]">
+          {armed
+            ? 'Jetzt auf den Plan klicken, um das Stück zu platzieren.'
+            : selectedPiece
+              ? `Ausgewählt: ${formatMeters(selectedPiece.w, 2)}×${formatMeters(selectedPiece.d, 2)} m${
+                  selectedPiece.corner !== undefined && selectedPiece.w !== selectedPiece.d
+                    ? ` (${triangleHand(selectedPiece.corner, selectedPiece.w, selectedPiece.d)})`
+                    : ''
+                }`
+              : selectedIds.length > 1
+                ? `${selectedIds.length} Stücke ausgewählt`
+                : 'Stück anklicken (Umschalt+Klick für mehrere) oder unten eins wählen.'}
+        </span>
+        {onUndo && (
+          <button type="button" onClick={onUndo} disabled={!canUndo} title="Rückgängig (Strg/Cmd+Z)" aria-label="Rückgängig" className={ACTION_BTN}>
+            ↶
           </button>
-        </div>
-      )}
-      {selectedIds.length > 1 && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
-          <span className="text-[var(--color-text)]">{selectedIds.length} Stücke ausgewählt (Umschalt+Klick wählt weitere an/ab)</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={removeSelected}
-              className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-            >
-              Alle entfernen
-            </button>
-            <button type="button" onClick={() => setSelectedIds([])} className="px-2 py-1 rounded text-xs text-[var(--color-text-muted)] underline">
-              Abwählen
-            </button>
-          </div>
-        </div>
-      )}
-      {selectedPiece && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
-          <span className="text-[var(--color-text)]">
-            Ausgewählt: {formatMeters(selectedPiece.w, 2)}×{formatMeters(selectedPiece.d, 2)} m
-            {selectedPiece.corner !== undefined && selectedPiece.w !== selectedPiece.d && ` (${triangleHand(selectedPiece.corner, selectedPiece.w, selectedPiece.d)})`}
-          </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={rotateSelected}
-              className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-            >
-              ⤾ Drehen
-            </button>
-            {selectedPiece.corner !== undefined && selectedPiece.w !== selectedPiece.d && onMirrorPiece && (
+        )}
+        {onRedo && (
+          <button type="button" onClick={onRedo} disabled={!canRedo} title="Wiederholen (Strg/Cmd+Umschalt+Z)" aria-label="Wiederholen" className={ACTION_BTN}>
+            ↷
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={rotateCurrent}
+          disabled={!armed && !selectedPiece}
+          title="Drehen (R) — wirkt auf das gewählte oder gerade aufgenommene Stück"
+          className={ACTION_BTN}
+        >
+          ⤾ Drehen
+        </button>
+        {((armed?.kind === 'triangle' && armed.w !== armed.d) || (selectedPiece?.corner !== undefined && selectedPiece.w !== selectedPiece.d)) && (
+          <button type="button" onClick={mirrorCurrent} title="Spiegeln — wechselt links/rechts" className={ACTION_BTN}>
+            ⇋ Spiegeln
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={removeSelected}
+          disabled={selectedIds.length === 0}
+          title="Entfernen (Entf)"
+          className={`${ACTION_BTN} enabled:hover:!border-[var(--color-danger)] enabled:hover:!text-[var(--color-danger)]`}
+        >
+          {selectedIds.length > 1 ? `Entfernen (${selectedIds.length})` : 'Entfernen'}
+        </button>
+        {(armed || selectedIds.length > 0) && (
+          <button
+            type="button"
+            onClick={() => (armed ? arm(null) : setSelectedIds([]))}
+            className="px-2 py-1 text-xs text-[var(--color-text-muted)] underline"
+          >
+            {armed ? 'Abbrechen' : 'Abwählen'}
+          </button>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {pieces.length > 0 && (
+            <div className="flex items-center gap-1.5" role="group" aria-label="Ganze Fläche verschieben">
+              <span className="text-xs text-[var(--color-text-muted)]">Alles verschieben</span>
               <button
                 type="button"
-                onClick={() => onMirrorPiece(selectedPiece.id)}
-                className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
+                onClick={() => shiftAll(-GRID_STEP_M)}
+                disabled={!canShiftLeft}
+                title={canShiftLeft ? 'Alle Stücke gemeinsam 0,5 m nach links (Umschalt+←)' : 'Die Fläche liegt schon am linken Rand'}
+                aria-label="Alle Stücke 0,5 m nach links verschieben"
+                className={ACTION_BTN}
               >
-                ⇋ Spiegeln
+                ←
               </button>
-            )}
-            <button
-              type="button"
-              onClick={removeSelected}
-              className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-            >
-              Entfernen
+              <button
+                type="button"
+                onClick={() => shiftAll(GRID_STEP_M)}
+                title="Alle Stücke gemeinsam 0,5 m nach rechts (Umschalt+→)"
+                aria-label="Alle Stücke 0,5 m nach rechts verschieben"
+                className={ACTION_BTN}
+              >
+                →
+              </button>
+            </div>
+          )}
+          {onClear && pieces.length > 0 && (
+            <button type="button" onClick={onClear} title="Leert den ganzen Plan" className={`${ACTION_BTN} enabled:hover:!border-[var(--color-danger)] enabled:hover:!text-[var(--color-danger)]`}>
+              Zurücksetzen
             </button>
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              className="px-2 py-1 rounded text-xs text-[var(--color-text-muted)] underline"
-            >
-              Abwählen
-            </button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
       {blockedMessage && (
         <div role="status" className="rounded-md border border-[var(--color-danger)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-danger)]">
           {blockedMessage}
@@ -650,7 +729,7 @@ export function PieceCanvasEditor({
         viewBox={viewBox}
         className="w-full h-auto max-h-[420px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         role="img"
-        aria-label="Bau-Editor — klicken und dann Tastatur nutzen (Pfeiltasten, Enter, R, Entf, Esc, 1–5, T; Kurzbefehle siehe unten)"
+        aria-label="Bau-Editor — klicken und dann Tastatur nutzen (Pfeiltasten, Enter, R, Entf, Esc, 1–4, T; Kurzbefehle siehe unten)"
         tabIndex={0}
         onKeyDown={handleCanvasKeyDown}
       >
@@ -836,287 +915,65 @@ export function PieceCanvasEditor({
 
       </svg>
 
-      <div className="flex flex-wrap items-center gap-3" style={{ fontFamily: 'var(--font-display)' }}>
-        {/* Breite-Leiste */}
-        <div className="flex rounded-md border border-[var(--color-panel-stroke)] overflow-hidden">
-          {PALETTE_WIDTHS.map((w, idx) => (
-            <button
-              key={w}
-              type="button"
-              onClick={() => {
-                let newD = paletteD;
-                if (!isCatalogRect(w, newD)) {
-                  const validDepths = PALETTE_DEPTHS.filter((d) => isCatalogRect(w, d));
-                  newD = validDepths[0] ?? 0.39;
-                }
-                setPaletteW(w);
-                setPaletteD(newD);
-                const newPayload: ToolPayload = { kind: 'piece', w, d: newD };
-                arm(paletteW === w && paletteD === newD && armed?.kind === 'piece' ? null : newPayload);
-              }}
-              aria-pressed={paletteW === w}
-              className={`px-3 py-1.5 text-sm cursor-pointer select-none touch-none ${idx > 0 ? 'border-l border-[var(--color-panel-stroke)]' : ''} ${
-                paletteW === w
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-panel-fill)]'
-              }`}
-            >
-              {formatMeters(w, 1)} m
-            </button>
-          ))}
-        </div>
-
-        {/* Tiefe-Leiste */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-[var(--color-text-muted)]">Tiefe:</span>
-          <div className="flex rounded-md border border-[var(--color-panel-stroke)] overflow-hidden" title="Echte NivTec-Standardtiefen 100/75/50/39 cm">
-            {PALETTE_DEPTHS.map((d, idx) => {
-              const isDisabled = !isCatalogRect(paletteW, d);
+      <div className="space-y-2" style={{ fontFamily: 'var(--font-display)' }}>
+        <p className="text-xs text-[var(--color-text-muted)]">
+          Teil auf den Plan ziehen oder anklicken und dann auf den Plan klicken. Beim Ziehen dreht R, Rechtsklick oder das Mausrad das Teil.
+        </p>
+        {GALLERY_GROUPS.map((group) => (
+          <div key={group.title} className="flex flex-wrap items-end gap-x-3 gap-y-1.5">
+            <span className="w-full text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              {group.title}
+            </span>
+            {group.tiles.map((tile) => {
+              const isArmed = payloadMatches(armed, tile.payload);
+              const g = tile.geometry;
+              const scale = 24;
               return (
                 <button
-                  key={d}
+                  key={tile.key}
                   type="button"
-                  disabled={isDisabled}
+                  onPointerDown={(e) => handlePaletteButtonPointerDown(e, tile.payload)}
+                  onPointerMove={handlePaletteButtonPointerMove}
+                  onPointerUp={handlePaletteButtonPointerUp}
                   onClick={() => {
-                    setPaletteD(d);
-                    const newPayload: ToolPayload = { kind: 'piece', w: paletteW, d };
-                    arm(paletteD === d && armed?.kind === 'piece' ? null : newPayload);
+                    if (suppressNextClickRef.current) {
+                      suppressNextClickRef.current = false;
+                      return;
+                    }
+                    arm(isArmed ? null : tile.payload);
                   }}
-                  aria-pressed={paletteD === d}
-                  className={`px-3 py-1.5 text-sm cursor-pointer select-none touch-none disabled:opacity-40 disabled:cursor-not-allowed ${idx > 0 ? 'border-l border-[var(--color-panel-stroke)]' : ''} ${
-                    paletteD === d
-                      ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text)] hover:bg-[var(--color-panel-fill)]'
+                  aria-pressed={isArmed}
+                  aria-label={`${group.title === 'Rechtecke' ? 'Stück' : group.title === 'Dreiecke' ? 'Dreieckpodest' : ''} ${tile.label} m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`.trim()}
+                  title={`${tile.label} m`}
+                  className={`flex min-w-[3.25rem] cursor-pointer select-none touch-none flex-col items-center gap-1 rounded-md border px-2 py-1.5 ${
+                    isArmed
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
+                      : 'border-[var(--color-panel-stroke)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]'
                   }`}
                 >
-                  {formatMeters(d, 2)} m
+                  <span className="flex h-[52px] items-end">
+                    <svg
+                      width={g.w * scale + 4}
+                      height={g.d * scale + 4}
+                      viewBox={`-0.08 -0.08 ${g.w + 0.16} ${g.d + 0.16}`}
+                      aria-hidden
+                    >
+                      <PieceShape
+                        piece={g}
+                        fill={isArmed ? 'rgba(255,255,255,0.35)' : 'var(--color-panel-fill)'}
+                        stroke={isArmed ? 'currentColor' : 'var(--color-panel-stroke)'}
+                        strokeWidth={0.06}
+                      />
+                    </svg>
+                  </span>
+                  <span className="text-[11px] leading-none" style={{ fontFamily: 'var(--font-mono)' }}>
+                    {tile.label}
+                  </span>
                 </button>
               );
             })}
           </div>
-        </div>
-
-        {/* Platzier-Button */}
-        {(() => {
-          const payload: ToolPayload = { kind: 'piece', w: paletteW, d: paletteD };
-          const isArmed = armed?.kind === 'piece' && armed.w === paletteW && armed.d === paletteD;
-          return (
-            <button
-              type="button"
-              onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-              onPointerMove={handlePaletteButtonPointerMove}
-              onPointerUp={handlePaletteButtonPointerUp}
-              onClick={() => {
-                if (suppressNextClickRef.current) {
-                  suppressNextClickRef.current = false;
-                  return;
-                }
-                arm(isArmed ? null : payload);
-              }}
-              aria-pressed={isArmed}
-              aria-label={`Stück ${formatMeters(paletteW, 1)}×${formatMeters(paletteD, 2)} m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-              className={`px-3 py-1.5 text-sm rounded-md cursor-pointer select-none touch-none border ${
-                isArmed
-                  ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                  : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:bg-[var(--color-panel-fill)]'
-              }`}
-            >
-              {formatMeters(paletteW, 1)}×{formatMeters(paletteD, 2)} m
-            </button>
-          );
-        })()}
-
-        {armed?.kind === 'piece' && (
-          <button
-            type="button"
-            onClick={() => setArmedState((cur) => (cur?.kind === 'piece' ? { kind: 'piece', w: cur.d, d: cur.w } : cur))}
-            title="Vertauscht Breite und Tiefe des ausgewählten Stücks"
-            aria-label="Ausgewähltes Stück drehen"
-            className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-          >
-            ⤾
-          </button>
-        )}
-        {armed?.kind === 'triangle' && (
-          <button
-            type="button"
-            onClick={() => setArmedState((cur) => (cur?.kind === 'triangle' ? { kind: 'triangle', corner: nextTriangleCorner(cur.corner), w: cur.d, d: cur.w } : cur))}
-            title="Dreht das Dreieckpodest zur nächsten Ecke"
-            aria-label="Dreieckpodest drehen"
-            className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-          >
-            ⤾
-          </button>
-        )}
-        {armed?.kind === 'viertelkreis' && (
-          <button
-            type="button"
-            onClick={() => setArmedState((cur) => (cur?.kind === 'viertelkreis' ? { kind: 'viertelkreis', corner: nextTriangleCorner(cur.corner) } : cur))}
-            title="Dreht den Viertelkreis zur nächsten Ecke"
-            aria-label="Viertelkreis drehen"
-            className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-          >
-            ⤾
-          </button>
-        )}
-
-        <div className="flex items-center gap-1.5">
-          {(() => {
-            const payload: ToolPayload = { kind: 'triangle', corner: 'tl', w: TRIANGLE_PANEL_SIZE_M, d: TRIANGLE_PANEL_SIZE_M };
-            const isArmed = armed?.kind === 'triangle' && armed.w === TRIANGLE_PANEL_SIZE_M && armed.d === TRIANGLE_PANEL_SIZE_M;
-            return (
-              <button
-                type="button"
-                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-                onPointerMove={handlePaletteButtonPointerMove}
-                onPointerUp={handlePaletteButtonPointerUp}
-                onClick={() => {
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  arm(isArmed ? null : payload);
-                }}
-                aria-pressed={isArmed}
-                aria-label={`Dreieckpodest 1×1 m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Dreieckpodest 1×1 m — echtes NivTec-Katalogstück, rechtwinkliges Dreieck mit 1×1 m Katheten"
-                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
-                }`}
-              >
-                <span aria-hidden>◺</span>
-              </button>
-            );
-          })()}
-          {(() => {
-            const payload: ToolPayload = { kind: 'triangle', corner: 'tl', w: 2, d: 1 };
-            const isArmed = armed?.kind === 'triangle' && armed.w === 2 && armed.d === 1;
-            return (
-              <button
-                type="button"
-                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-                onPointerMove={handlePaletteButtonPointerMove}
-                onPointerUp={handlePaletteButtonPointerUp}
-                onClick={() => {
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  arm(isArmed ? null : payload);
-                }}
-                aria-pressed={isArmed}
-                aria-label={`Dreieckpodest 2×1 m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title={`Dreieckpodest 2×1 m — 2×1-Katheten-Variante (aktuell: ${isArmed ? triangleHand(payload.corner, payload.w, payload.d) : '–'})`}
-                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
-                }`}
-              >
-                <span aria-hidden>◺ 2</span>
-              </button>
-            );
-          })()}
-          {(() => {
-            const payload: ToolPayload = { kind: 'viertelkreis', corner: 'tl' };
-            const isArmed = armed?.kind === 'viertelkreis';
-            return (
-              <button
-                type="button"
-                onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
-                onPointerMove={handlePaletteButtonPointerMove}
-                onPointerUp={handlePaletteButtonPointerUp}
-                onClick={() => {
-                  if (suppressNextClickRef.current) {
-                    suppressNextClickRef.current = false;
-                    return;
-                  }
-                  arm(isArmed ? null : payload);
-                }}
-                aria-pressed={isArmed}
-                aria-label={`Viertelkreis R 100 cm ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`}
-                title="Viertelkreis R 100 cm — gekrümmtes Podest-Element"
-                className={`w-9 h-9 flex items-center justify-center rounded-md border text-base cursor-pointer select-none touch-none ${
-                  isArmed
-                    ? 'bg-[var(--color-accent)] text-[var(--color-accent-contrast)] border-[var(--color-accent)]'
-                    : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-panel-stroke)] hover:border-[var(--color-accent)]'
-                }`}
-              >
-                <span aria-hidden>◔</span>
-              </button>
-            );
-          })()}
-        </div>
-
-        {(onUndo || pieces.length > 0) && (
-          <div className="flex items-center gap-1.5 ml-auto" role="group" aria-label="Verlauf">
-            {onUndo && (
-              <button
-                type="button"
-                onClick={onUndo}
-                disabled={!canUndo}
-                title="Rückgängig (Strg/Cmd+Z)"
-                aria-label="Rückgängig"
-                className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
-              >
-                ↶
-              </button>
-            )}
-            {onRedo && (
-              <button
-                type="button"
-                onClick={onRedo}
-                disabled={!canRedo}
-                title="Wiederholen (Strg/Cmd+Umschalt+Z)"
-                aria-label="Wiederholen"
-                className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
-              >
-                ↷
-              </button>
-            )}
-            {onClear && pieces.length > 0 && (
-              <button
-                type="button"
-                onClick={onClear}
-                title="Leert den ganzen Plan"
-                className="px-3 py-1.5 rounded-md text-sm border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-              >
-                Zurücksetzen
-              </button>
-            )}
-          </div>
-        )}
-
-        {pieces.length > 0 && (
-          <div className="flex items-center gap-1.5" role="group" aria-label="Ganze Fläche verschieben">
-            <span className="text-xs text-[var(--color-text-muted)]">Alles verschieben</span>
-            <button
-              type="button"
-              onClick={() => shiftAll(-GRID_STEP_M)}
-              disabled={!canShiftLeft}
-              title={
-                canShiftLeft
-                  ? 'Alle Stücke gemeinsam 0,5 m nach links (Umschalt+←)'
-                  : 'Die Fläche liegt schon am linken Rand'
-              }
-              aria-label="Alle Stücke 0,5 m nach links verschieben"
-              className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[var(--color-panel-stroke)]"
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              onClick={() => shiftAll(GRID_STEP_M)}
-              title="Alle Stücke gemeinsam 0,5 m nach rechts (Umschalt+→)"
-              aria-label="Alle Stücke 0,5 m nach rechts verschieben"
-              className="w-9 h-9 flex items-center justify-center rounded-md border border-[var(--color-panel-stroke)] text-base cursor-pointer select-none bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-accent)]"
-            >
-              →
-            </button>
-          </div>
-        )}
+        ))}
       </div>
 
       <details className="text-xs text-[var(--color-text-muted)]">
@@ -1148,7 +1005,7 @@ export function PieceCanvasEditor({
           </li>
           <li>
             <kbd className="rounded border border-[var(--color-border)] px-1">1</kbd>–
-            <kbd className="rounded border border-[var(--color-border)] px-1">5</kbd> Plattengröße
+            <kbd className="rounded border border-[var(--color-border)] px-1">4</kbd> Plattengröße (Breite 2 / 1,5 / 1 / 0,5 m, Tiefe 1 m)
           </li>
           <li>
             <kbd className="rounded border border-[var(--color-border)] px-1">T</kbd> Dreieckpodest
