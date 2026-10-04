@@ -142,6 +142,8 @@ interface DragState {
   startClientY: number;
   moved: boolean;
   target: { x: number; y: number } | null;
+  /** Nur bei gemeinsamem Verschieben mehrerer ausgewählter Stücke: Startpunkt (Meter) und Versatz. */
+  group?: { startX: number; startY: number; dx: number; dy: number };
 }
 
 interface PaletteDragState {
@@ -361,7 +363,16 @@ export function PieceCanvasEditor({
       // setPointerCapture kann ohne aktiven, vom Browser registrierten Pointer werfen
       // (z.B. bei synthetisch erzeugten Events) — das Ziehen funktioniert trotzdem.
     }
-    setDrag({ id: piece.id, startClientX: e.clientX, startClientY: e.clientY, moved: false, target: null });
+    const inGroup = selectedIds.length > 1 && selectedIds.includes(piece.id);
+    const start = svgPointFromClient(e.clientX, e.clientY);
+    setDrag({
+      id: piece.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      moved: false,
+      target: null,
+      group: inGroup ? { startX: start.x, startY: start.y, dx: 0, dy: 0 } : undefined,
+    });
   }
 
   function handlePiecePointerMove(e: React.PointerEvent<SVGElement>, piece: Piece2D) {
@@ -369,12 +380,30 @@ export function PieceCanvasEditor({
     const movedPx = Math.hypot(e.clientX - drag.startClientX, e.clientY - drag.startClientY);
     if (movedPx < DRAG_THRESHOLD_PX) return;
     const { x, y } = svgPointFromClient(e.clientX, e.clientY);
+    if (drag.group) {
+      const moving = pieces.filter((p) => selectedIds.includes(p.id));
+      const snap = (v: number) => Math.round(v / GRID_STEP_M) * GRID_STEP_M;
+      const minX = Math.min(...moving.map((p) => p.x));
+      const minY = Math.min(...moving.map((p) => p.y));
+      const dx = Math.max(-minX, snap(x - drag.group.startX));
+      const dy = Math.max(-minY, snap(y - drag.group.startY));
+      const others = pieces.filter((p) => !selectedIds.includes(p.id));
+      const free = moving.every((p) => fitsAt(others, p.x + dx, p.y + dy, p.w, p.d));
+      if (free) setDrag((d) => (d && d.group ? { ...d, moved: true, group: { ...d.group, dx, dy } } : d));
+      else setDrag((d) => (d ? { ...d, moved: true } : d));
+      return;
+    }
     const target = findFreePosition(pieces, piece.w, piece.d, x - piece.w / 2, y - piece.d / 2, piece.id);
     setDrag((d) => (d ? { ...d, moved: true, target } : d));
   }
 
   function handlePiecePointerUp(piece: Piece2D) {
-    if (drag?.id === piece.id) {
+    if (drag?.id === piece.id && drag.group) {
+      const { dx, dy } = drag.group;
+      if (drag.moved && (dx !== 0 || dy !== 0)) {
+        pieces.filter((p) => selectedIds.includes(p.id)).forEach((p) => onMovePiece(p.id, round1(p.x + dx), round1(p.y + dy)));
+      }
+    } else if (drag?.id === piece.id) {
       if (drag.moved && drag.target) {
         onMovePiece(piece.id, drag.target.x, drag.target.y);
         setSelectedId(null);
@@ -729,7 +758,7 @@ export function PieceCanvasEditor({
         )}
 
         {pieces.map((p) => {
-          const isDragTarget = drag?.id === p.id && drag.moved;
+          const isDragTarget = drag?.moved && (drag.group ? selectedIds.includes(p.id) : drag.id === p.id);
           // Bei p.corner !== undefined (Dreieck) NIE isSondermassPiece(p.w,p.d) aufrufen — (1,1)
           // ist auch die Bounding-Box des echten 1×1-Rechtecks, das würde fälschlich matchen.
           const sondermass = p.corner === undefined && isSondermassPiece(p.w, p.d);
@@ -755,6 +784,21 @@ export function PieceCanvasEditor({
           );
         })}
 
+        {drag?.group &&
+          drag.moved &&
+          pieces
+            .filter((p) => selectedIds.includes(p.id))
+            .map((p) => (
+              <PieceShape
+                key={`ghost-${p.id}`}
+                piece={{ ...p, x: p.x + drag.group!.dx, y: p.y + drag.group!.dy }}
+                fill="var(--color-accent)"
+                fillOpacity={0.35}
+                stroke="var(--color-accent)"
+                strokeWidth={0.03}
+                style={{ pointerEvents: 'none' }}
+              />
+            ))}
         {drag?.target &&
           (() => {
             const dragged = pieces.find((p) => p.id === drag.id);
