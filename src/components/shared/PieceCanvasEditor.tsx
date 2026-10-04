@@ -91,7 +91,7 @@ const GALLERY_GROUPS: { title: string; tiles: GalleryTile[] }[] = [
     tiles: [
       {
         key: 'quarter',
-        label: 'Viertelkreis R1',
+        label: 'R 1',
         payload: { kind: 'viertelkreis', corner: 'tl' },
         geometry: { x: 0, y: 0, w: QUARTER_CIRCLE_RADIUS_M, d: QUARTER_CIRCLE_RADIUS_M, corner: 'tl', shape: 'viertelkreis' },
       },
@@ -919,7 +919,10 @@ export function PieceCanvasEditor({
         <p className="text-xs text-[var(--color-text-muted)]">
           Teil auf den Plan ziehen oder anklicken und dann auf den Plan klicken. Beim Ziehen dreht R, Rechtsklick oder das Mausrad das Teil.
         </p>
-        {GALLERY_GROUPS.map((group) => (
+        <div className="flex flex-wrap items-start gap-x-10 gap-y-4">
+        {[GALLERY_GROUPS.slice(0, 1), GALLERY_GROUPS.slice(1)].map((column, colIdx) => (
+        <div key={colIdx} className={`flex gap-x-6 gap-y-3 ${colIdx === 0 ? 'max-w-[34rem] flex-wrap' : 'flex-wrap'}`}>
+        {column.map((group) => (
           <div key={group.title} className="flex flex-wrap items-end gap-x-3 gap-y-1.5">
             <span className="w-full text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
               {group.title}
@@ -943,8 +946,8 @@ export function PieceCanvasEditor({
                     arm(isArmed ? null : tile.payload);
                   }}
                   aria-pressed={isArmed}
-                  aria-label={`${group.title === 'Rechtecke' ? 'Stück' : group.title === 'Dreiecke' ? 'Dreieckpodest' : ''} ${tile.label} m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`.trim()}
-                  title={`${tile.label} m`}
+                  aria-label={`${group.title === 'Rechtecke' ? 'Stück' : group.title === 'Dreiecke' ? 'Dreieckpodest' : 'Viertelkreis'} ${tile.label} m ${isArmed ? 'ausgewählt' : 'auswählen'}, oder direkt auf den Plan ziehen`.trim()}
+                  title={tile.payload.kind === 'viertelkreis' ? 'Viertelkreis, Radius 1 m' : `${tile.label} m`}
                   className={`flex min-w-[3.25rem] cursor-pointer select-none touch-none flex-col items-center gap-1 rounded-md border px-2 py-1.5 ${
                     isArmed
                       ? 'border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-accent-contrast)]'
@@ -974,6 +977,9 @@ export function PieceCanvasEditor({
             })}
           </div>
         ))}
+        </div>
+        ))}
+        </div>
       </div>
 
       <details className="text-xs text-[var(--color-text-muted)]">
