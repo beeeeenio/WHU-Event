@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   findFreePosition,
   fitsAt,
@@ -173,7 +173,14 @@ export function PieceCanvasEditor({
   const svgRef = useRef<SVGSVGElement>(null);
   const [armed, setArmedState] = useState<ToolPayload | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Einzelauswahl (Drehen/Spiegeln/Pfeiltasten) gilt nur bei genau einem ausgewählten Stück;
+  // mit Umschalt+Klick lassen sich mehrere auswählen, die dann gemeinsam gelöscht werden.
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  function setSelectedId(next: string | null | ((cur: string | null) => string | null)) {
+    const value = typeof next === 'function' ? next(selectedId) : next;
+    setSelectedIds(value === null ? [] : [value]);
+  }
   const [drag, setDrag] = useState<DragState | null>(null);
   const [paletteDrag, setPaletteDrag] = useState<PaletteDragState | null>(null);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
@@ -303,9 +310,7 @@ export function PieceCanvasEditor({
   // Drehen, während ein Stück noch aus der Palette gezogen wird (vor dem Loslassen) — der
   // Button behält seinen Fokus über die ganze Zieh-Geste (Pointer-Capture ändert daran nichts),
   // daher reicht ein normaler onKeyDown hier.
-  function handlePaletteButtonKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
-    if (e.key.toLowerCase() !== 'r' || !paletteDrag) return;
-    e.preventDefault();
+  function rotatePaletteDrag() {
     setPaletteDrag((d) => {
       if (!d) return d;
       if (d.payload.kind === 'piece') return { ...d, payload: { kind: 'piece', w: d.payload.d, d: d.payload.w } };
@@ -315,9 +320,41 @@ export function PieceCanvasEditor({
     });
   }
 
+  // Fensterweit statt nur am Button: Safari fokussiert Buttons beim Klick nicht, daher kam R dort
+  // nie an. Zusätzlich dreht ein Rechtsklick/Mausrad das gezogene Stück sofort.
+  const dragging = paletteDrag !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'r' || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      rotatePaletteDrag();
+    };
+    const onContext = (e: MouseEvent) => {
+      e.preventDefault();
+      rotatePaletteDrag();
+    };
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      rotatePaletteDrag();
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('contextmenu', onContext);
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('contextmenu', onContext);
+      window.removeEventListener('wheel', onWheel);
+    };
+  }, [dragging]);
+
   function handlePiecePointerDown(e: React.PointerEvent<SVGElement>, piece: Piece2D) {
     if (armed) return;
     e.stopPropagation();
+    if (e.shiftKey) {
+      setSelectedIds((cur) => (cur.includes(piece.id) ? cur.filter((id) => id !== piece.id) : [...cur, piece.id]));
+      return;
+    }
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -377,9 +414,9 @@ export function PieceCanvasEditor({
   }
 
   function removeSelected() {
-    if (!selectedPiece) return;
-    onRemovePiece(selectedPiece.id);
-    setSelectedId(null);
+    if (selectedIds.length === 0) return;
+    selectedIds.forEach((id) => onRemovePiece(id));
+    setSelectedIds([]);
   }
 
   const canShiftLeft = pieces.length > 0 && shiftPieces(pieces, -GRID_STEP_M) !== null;
@@ -424,7 +461,7 @@ export function PieceCanvasEditor({
       return;
     }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPiece) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
       e.preventDefault();
       removeSelected();
       return;
@@ -514,6 +551,23 @@ export function PieceCanvasEditor({
           <button type="button" onClick={() => arm(null)} className="shrink-0 text-xs underline">
             Abbrechen
           </button>
+        </div>
+      )}
+      {selectedIds.length > 1 && (
+        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
+          <span className="text-[var(--color-text)]">{selectedIds.length} Stücke ausgewählt (Umschalt+Klick wählt weitere an/ab)</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={removeSelected}
+              className="px-2 py-1 rounded text-xs border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+            >
+              Alle entfernen
+            </button>
+            <button type="button" onClick={() => setSelectedIds([])} className="px-2 py-1 rounded text-xs text-[var(--color-text-muted)] underline">
+              Abwählen
+            </button>
+          </div>
         </div>
       )}
       {selectedPiece && (
@@ -630,14 +684,14 @@ export function PieceCanvasEditor({
           }}
           style={{ cursor: armed ? 'copy' : 'default' }}
         />
-        {!armed && selectedId && (
+        {!armed && selectedIds.length > 0 && (
           <rect
             x={0}
             y={0}
             width={canvasWidthM}
             height={canvasDepthM}
             fill="transparent"
-            onClick={() => setSelectedId(null)}
+            onClick={() => setSelectedIds([])}
           />
         )}
 
@@ -686,8 +740,8 @@ export function PieceCanvasEditor({
               piece={{ ...p, shape: p.shape }}
               fill={sondermass ? `url(#pce-hatch-warning-${uid})` : `url(#pce-hatch-${uid})`}
               fillOpacity={isDragTarget ? 0.25 : 1}
-              stroke={selectedId === p.id ? 'var(--color-accent)' : 'var(--color-panel-stroke)'}
-              strokeWidth={selectedId === p.id ? 0.035 : 0.02}
+              stroke={selectedIds.includes(p.id) ? 'var(--color-accent)' : 'var(--color-panel-stroke)'}
+              strokeWidth={selectedIds.includes(p.id) ? 0.035 : 0.02}
               pointerEvents={interactive ? 'all' : 'none'}
               style={{ cursor: interactive ? 'grab' : 'default' }}
               onPointerDown={(e) => handlePiecePointerDown(e, p)}
@@ -808,7 +862,6 @@ export function PieceCanvasEditor({
               onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
               onPointerMove={handlePaletteButtonPointerMove}
               onPointerUp={handlePaletteButtonPointerUp}
-              onKeyDown={handlePaletteButtonKeyDown}
               onClick={() => {
                 if (suppressNextClickRef.current) {
                   suppressNextClickRef.current = false;
@@ -873,7 +926,6 @@ export function PieceCanvasEditor({
                 onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
                 onPointerMove={handlePaletteButtonPointerMove}
                 onPointerUp={handlePaletteButtonPointerUp}
-                onKeyDown={handlePaletteButtonKeyDown}
                 onClick={() => {
                   if (suppressNextClickRef.current) {
                     suppressNextClickRef.current = false;
@@ -903,7 +955,6 @@ export function PieceCanvasEditor({
                 onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
                 onPointerMove={handlePaletteButtonPointerMove}
                 onPointerUp={handlePaletteButtonPointerUp}
-                onKeyDown={handlePaletteButtonKeyDown}
                 onClick={() => {
                   if (suppressNextClickRef.current) {
                     suppressNextClickRef.current = false;
@@ -933,7 +984,6 @@ export function PieceCanvasEditor({
                 onPointerDown={(e) => handlePaletteButtonPointerDown(e, payload)}
                 onPointerMove={handlePaletteButtonPointerMove}
                 onPointerUp={handlePaletteButtonPointerUp}
-                onKeyDown={handlePaletteButtonKeyDown}
                 onClick={() => {
                   if (suppressNextClickRef.current) {
                     suppressNextClickRef.current = false;
